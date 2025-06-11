@@ -369,57 +369,88 @@ class AIService {
             }
 
             const columns = Object.keys(data[0]);
-            const sampleData = data.slice(0, 5);
+            const sampleData = data.slice(0, 10);
             
-            // Analyze column types for better suggestions
-            const numericColumns = [];
-            const categoricalColumns = [];
-            const dateColumns = [];
+            // Perform comprehensive data analysis for better suggestions
+            const dataAnalysis = this.analyzeDataForSuggestions(data, columns);
             
-            columns.forEach(col => {
-                const values = sampleData.map(row => row[col]).filter(val => val);
-                const numericValues = values.filter(val => !isNaN(parseFloat(val)));
-                const uniqueValues = [...new Set(values)];
-                
-                if (numericValues.length > values.length * 0.7) {
-                    numericColumns.push(col);
-                } else if (uniqueValues.length < values.length * 0.5) {
-                    categoricalColumns.push(col);
-                } else if (col.toLowerCase().includes('date') || col.toLowerCase().includes('time')) {
-                    dateColumns.push(col);
-                }
-            });
-
             const prompt = `
-            Based on this CSV dataset, generate 6-8 specific analysis queries that will create EXCELLENT visualizations:
+            You are a data visualization expert and business analyst. Generate 8-10 HIGHLY USEFUL and GRAPHICALLY VIABLE queries for this dataset.
             
-            Dataset Info:
-            - Total rows: ${data.length}
-            - Numeric columns: ${numericColumns.join(', ') || 'None'}
-            - Categorical columns: ${categoricalColumns.join(', ') || 'None'}
-            - Date columns: ${dateColumns.join(', ') || 'None'}
-            - All columns: ${columns.join(', ')}
+            CRITICAL REQUIREMENTS:
+            - Each query MUST create a meaningful, actionable chart
+            - Focus on business insights and decision-making value
+            - NEVER suggest table views, lists, or raw data display
+            - Prioritize queries that reveal patterns, trends, and relationships
+            - Use EXACT column names from the dataset
             
-            Sample data (first 3 rows):
-            ${JSON.stringify(sampleData.slice(0, 3), null, 2)}
+            DATASET ANALYSIS:
+            - Total records: ${data.length}
+            - Columns: ${columns.join(', ')}
             
-            Generate queries that:
-            1. Create BEAUTIFUL and MEANINGFUL charts (bar charts, line charts, scatter plots, histograms)
-            2. Use SPECIFIC column names from the actual dataset
-            3. Focus on comparisons, trends, distributions, and correlations
-            4. Are perfect for business insights and decision making
-            5. Will generate data that plots well on X and Y axes
+            DATA INSIGHTS:
+            ${dataAnalysis.insights}
             
-            PRIORITIZE these types of queries:
-            - "Show [categorical column] vs [numeric column]" (great bar charts)
-            - "Compare [numeric values] across [categories]" (excellent comparisons)
-            - "What is the trend of [numeric column] over [time/sequence]?" (line charts)
-            - "Find correlation between [numeric column 1] and [numeric column 2]" (scatter plots)
-            - "Show distribution of [numeric column]" (histograms)
-            - "Top 10 [items] by [numeric value]" (ranked bar charts)
+            COLUMN ANALYSIS:
+            ${dataAnalysis.columnDetails}
             
-            Return ONLY the questions, one per line, without numbering.
-            Make each question crystal clear and visualization-ready.`;
+            SAMPLE DATA (first 5 rows):
+            ${JSON.stringify(sampleData.slice(0, 5), null, 2)}
+            
+            GENERATE QUERIES IN THESE PRIORITY CATEGORIES:
+            
+            1. PERFORMANCE & RANKING QUERIES (High Business Value):
+               ${dataAnalysis.numericColumns.length > 0 && dataAnalysis.categoricalColumns.length > 0 ? 
+                 `- "Which ${dataAnalysis.categoricalColumns[0]} has the highest ${dataAnalysis.numericColumns[0]}?" (Bar Chart)
+                  - "Show top 10 ${dataAnalysis.categoricalColumns[0]} by ${dataAnalysis.numericColumns[0]} performance" (Horizontal Bar)
+                  - "Compare ${dataAnalysis.numericColumns[0]} performance across all ${dataAnalysis.categoricalColumns[0]}" (Bar Chart)` : 
+                 '- Performance analysis not available with current data structure'}
+            
+            2. TREND & TIME ANALYSIS (if applicable):
+               ${dataAnalysis.dateColumns.length > 0 && dataAnalysis.numericColumns.length > 0 ? 
+                 `- "Show ${dataAnalysis.numericColumns[0]} trend over ${dataAnalysis.dateColumns[0]}" (Line Chart)
+                  - "How has ${dataAnalysis.numericColumns[0]} changed over time?" (Area Chart)` : 
+                 '- Time-based analysis not available'}
+            
+            3. DISTRIBUTION & PATTERN ANALYSIS:
+               ${dataAnalysis.numericColumns.length > 0 ? 
+                 `- "What's the distribution pattern of ${dataAnalysis.numericColumns[0]}?" (Histogram)
+                  - "Show ${dataAnalysis.numericColumns[0]} distribution with statistical insights" (Box Plot style)` : 
+                 '- Distribution analysis limited without numeric data'}
+            
+            4. RELATIONSHIP & CORRELATION ANALYSIS:
+               ${dataAnalysis.numericColumns.length >= 2 ? 
+                 `- "What's the relationship between ${dataAnalysis.numericColumns[0]} and ${dataAnalysis.numericColumns[1]}?" (Scatter Plot)
+                  - "Show correlation strength between ${dataAnalysis.numericColumns[0]} and ${dataAnalysis.numericColumns[1]}" (Scatter with trend)` : 
+                 '- Correlation analysis not available'}
+            
+            5. COMPOSITION & BREAKDOWN ANALYSIS:
+               ${dataAnalysis.categoricalColumns.length > 0 ? 
+                 `- "Show percentage breakdown of ${dataAnalysis.categoricalColumns[0]} categories" (Pie Chart)
+                  - "What's the composition of ${dataAnalysis.categoricalColumns[0]} in the dataset?" (Donut Chart)` : 
+                 '- Composition analysis limited'}
+            
+            6. COMPARATIVE ANALYSIS:
+               ${dataAnalysis.categoricalColumns.length >= 2 ? 
+                 `- "Compare ${dataAnalysis.categoricalColumns[0]} vs ${dataAnalysis.categoricalColumns[1]} distribution" (Stacked Bar)
+                  - "Show cross-analysis of ${dataAnalysis.categoricalColumns[0]} and ${dataAnalysis.categoricalColumns[1]}" (Grouped Bar)` : 
+                 '- Cross-category comparison limited'}
+            
+            BUSINESS VALUE FOCUS:
+            - Prioritize queries that help with decision-making
+            - Focus on identifying top performers, outliers, and trends
+            - Highlight queries that reveal actionable insights
+            - Ensure each query answers a specific business question
+            
+            CHART VIABILITY REQUIREMENTS:
+            - Each query must have clear X and Y axis potential
+            - Data must be suitable for the suggested chart type
+            - Avoid queries that would result in empty or meaningless charts
+            - Ensure adequate data points for meaningful visualization
+            
+            Return ONLY 8-10 specific, actionable questions that create compelling charts.
+            Format: One question per line, no numbering, no bullets.
+            Each question should be business-focused and chart-ready.`;
 
             const result = await this.model.generateContent(prompt);
             const response = await result.response;
@@ -428,26 +459,173 @@ class AIService {
                 .split('\n')
                 .filter(q => q.trim())
                 .map(q => q.replace(/^\d+\.?\s*/, '').replace(/^[-*]\s*/, '').trim())
-                .filter(q => q.length > 10);
+                .filter(q => q.length > 15 && !q.toLowerCase().includes('table') && !q.toLowerCase().includes('list'))
+                .slice(0, 10);
             
-            return {
-                suggestions: suggestions.slice(0, 7),
+            // Cache successful results
+            const result_obj = {
+                suggestions: suggestions,
                 success: true
             };
+            this.setCache(cacheKey, result_obj);
+            
+            return result_obj;
         } catch (error) {
             console.error('Suggestion Generation Error:', error);
+            // Enhanced fallback suggestions that are data-aware
+            const fallbackSuggestions = this.generateDataAwareFallbacks(data);
             return {
-                suggestions: [
-                    "Show the distribution of values in the first numeric column",
-                    "Compare categories in the dataset",
-                    "Find the top 10 records by value",
-                    "Analyze trends over time if date data exists",
-                    "Show correlation between numeric columns"
-                ],
+                suggestions: fallbackSuggestions,
                 success: false,
                 error: error.message
             };
         }
+    }
+
+    // New method for comprehensive data analysis
+    analyzeDataForSuggestions(data, columns) {
+        const analysis = {
+            numericColumns: [],
+            categoricalColumns: [],
+            dateColumns: [],
+            insights: [],
+            columnDetails: []
+        };
+        
+        // Analyze each column
+        columns.forEach(col => {
+            const values = data.slice(0, 50).map(row => row[col]).filter(val => val !== null && val !== undefined && val !== '');
+            const uniqueValues = [...new Set(values)];
+            const numericValues = values.filter(val => !isNaN(parseFloat(val)) && isFinite(val));
+            
+            const columnInfo = {
+                name: col,
+                totalValues: values.length,
+                uniqueCount: uniqueValues.length,
+                nullCount: data.length - values.length,
+                type: 'unknown'
+            };
+            
+            // Determine column type and business relevance
+            if (numericValues.length > values.length * 0.7) {
+                analysis.numericColumns.push(col);
+                columnInfo.type = 'numeric';
+                columnInfo.min = Math.min(...numericValues);
+                columnInfo.max = Math.max(...numericValues);
+                columnInfo.avg = numericValues.reduce((sum, val) => sum + val, 0) / numericValues.length;
+                
+                // Business relevance indicators
+                const lowerCol = col.toLowerCase();
+                if (lowerCol.includes('price') || lowerCol.includes('cost') || lowerCol.includes('revenue') || 
+                    lowerCol.includes('sales') || lowerCol.includes('amount') || lowerCol.includes('value')) {
+                    columnInfo.businessRelevance = 'financial';
+                } else if (lowerCol.includes('count') || lowerCol.includes('quantity') || lowerCol.includes('number')) {
+                    columnInfo.businessRelevance = 'quantity';
+                } else if (lowerCol.includes('score') || lowerCol.includes('rating') || lowerCol.includes('performance')) {
+                    columnInfo.businessRelevance = 'performance';
+                }
+            } else if (uniqueValues.length < values.length * 0.5 && uniqueValues.length > 1 && uniqueValues.length < 20) {
+                analysis.categoricalColumns.push(col);
+                columnInfo.type = 'categorical';
+                columnInfo.categories = uniqueValues.slice(0, 10);
+                
+                // Business relevance for categories
+                const lowerCol = col.toLowerCase();
+                if (lowerCol.includes('department') || lowerCol.includes('category') || lowerCol.includes('type') || 
+                    lowerCol.includes('group') || lowerCol.includes('class')) {
+                    columnInfo.businessRelevance = 'classification';
+                } else if (lowerCol.includes('status') || lowerCol.includes('state') || lowerCol.includes('condition')) {
+                    columnInfo.businessRelevance = 'status';
+                }
+            } else if (col.toLowerCase().includes('date') || col.toLowerCase().includes('time') || 
+                      col.toLowerCase().includes('year') || col.toLowerCase().includes('month')) {
+                analysis.dateColumns.push(col);
+                columnInfo.type = 'date';
+                columnInfo.businessRelevance = 'temporal';
+            } else {
+                columnInfo.type = 'text';
+            }
+            
+            analysis.columnDetails.push(`${col}: ${columnInfo.type} (${uniqueValues.length} unique values, ${columnInfo.businessRelevance || 'general'} relevance)`);
+        });
+        
+        // Generate insights
+        if (analysis.numericColumns.length > 0 && analysis.categoricalColumns.length > 0) {
+            analysis.insights.push(`Strong potential for performance analysis comparing ${analysis.numericColumns.join(', ')} across ${analysis.categoricalColumns.join(', ')}`);
+        }
+        
+        if (analysis.numericColumns.length >= 2) {
+            analysis.insights.push(`Correlation analysis possible between ${analysis.numericColumns.slice(0, 2).join(' and ')}`);
+        }
+        
+        if (analysis.dateColumns.length > 0 && analysis.numericColumns.length > 0) {
+            analysis.insights.push(`Time-series analysis available for ${analysis.numericColumns.join(', ')} over ${analysis.dateColumns.join(', ')}`);
+        }
+        
+        if (analysis.categoricalColumns.length > 0) {
+            analysis.insights.push(`Distribution analysis possible for ${analysis.categoricalColumns.join(', ')} categories`);
+        }
+        
+        analysis.insights = analysis.insights.join('; ');
+        analysis.columnDetails = analysis.columnDetails.join('; ');
+        
+        return analysis;
+    }
+
+    // Enhanced data-aware fallback suggestions
+    generateDataAwareFallbacks(data) {
+        if (!data || data.length === 0) return [];
+        
+        const columns = Object.keys(data[0]);
+        const analysis = this.analyzeDataForSuggestions(data, columns);
+        const suggestions = [];
+        
+        // Performance and ranking queries (highest priority)
+        if (analysis.numericColumns.length > 0 && analysis.categoricalColumns.length > 0) {
+            suggestions.push(`Which ${analysis.categoricalColumns[0]} has the highest ${analysis.numericColumns[0]} performance?`);
+            suggestions.push(`Show top 10 ${analysis.categoricalColumns[0]} ranked by ${analysis.numericColumns[0]} values`);
+            suggestions.push(`Create performance comparison chart of ${analysis.numericColumns[0]} across ${analysis.categoricalColumns[0]}`);
+            
+            if (analysis.numericColumns.length > 1) {
+                suggestions.push(`Compare ${analysis.numericColumns[0]} vs ${analysis.numericColumns[1]} performance by ${analysis.categoricalColumns[0]}`);
+            }
+        }
+        
+        // Distribution and pattern analysis
+        if (analysis.numericColumns.length > 0) {
+            suggestions.push(`Show distribution pattern of ${analysis.numericColumns[0]} with histogram analysis`);
+            suggestions.push(`Find outliers and anomalies in ${analysis.numericColumns[0]} data using box plot`);
+            
+            if (analysis.numericColumns.length > 1) {
+                suggestions.push(`What's the correlation between ${analysis.numericColumns[0]} and ${analysis.numericColumns[1]}?`);
+                suggestions.push(`Create scatter plot showing ${analysis.numericColumns[0]} vs ${analysis.numericColumns[1]} relationship`);
+            }
+        }
+        
+        // Composition analysis
+        if (analysis.categoricalColumns.length > 0) {
+            suggestions.push(`Show percentage breakdown of ${analysis.categoricalColumns[0]} categories with pie chart`);
+            suggestions.push(`What's the composition distribution of ${analysis.categoricalColumns[0]} in the dataset?`);
+            
+            if (analysis.categoricalColumns.length > 1) {
+                suggestions.push(`Compare distribution of ${analysis.categoricalColumns[0]} vs ${analysis.categoricalColumns[1]} categories`);
+            }
+        }
+        
+        // Time-based analysis
+        if (analysis.dateColumns.length > 0 && analysis.numericColumns.length > 0) {
+            suggestions.push(`Show ${analysis.numericColumns[0]} trend over ${analysis.dateColumns[0]} with line chart`);
+            suggestions.push(`How has ${analysis.numericColumns[0]} changed over time in ${analysis.dateColumns[0]}?`);
+        }
+        
+        // Ensure we have enough suggestions
+        if (suggestions.length < 8) {
+            suggestions.push(`Create comprehensive dashboard showing key insights from this dataset`);
+            suggestions.push(`Show the most significant patterns and relationships in the data`);
+            suggestions.push(`Generate multi-chart analysis revealing important business insights`);
+        }
+        
+        return suggestions.slice(0, 10);
     }
 
     // Enhanced method to analyze queries and return structured responses
@@ -471,72 +649,94 @@ class AIService {
             const sampleData = data.slice(0, 10);
             
             const prompt = `
-            You are an expert data visualization analyst. Analyze this user query and provide the OPTIMAL visualization strategy with SPECIFIC axis recommendations.
+            You are an expert data analyst and visualization specialist. Analyze this user query and provide PRECISE data processing and visualization instructions.
             
             Dataset Information:
-            - Columns: ${columns.join(', ')}
+            - Available Columns: ${columns.join(', ')}
             - Total rows: ${data.length}
             - Sample data: ${JSON.stringify(sampleData.slice(0, 3), null, 2)}
             
             User Query: "${query}"
             
-            CRITICAL VISUALIZATION REQUIREMENTS:
-            1. Choose the BEST chart type for maximum insight and visual appeal
-            2. Specify EXACTLY what should be on X-axis and Y-axis with proper data values
-            3. Determine optimal data grouping, aggregation, and binning
-            4. Recommend data ranges and scaling for best visual representation
-            5. Suggest meaningful axis labels and chart titles
+            CRITICAL ANALYSIS REQUIREMENTS:
+            1. UNDERSTAND THE QUESTION: What exactly is the user asking for?
+            2. IDENTIFY REQUIRED CALCULATIONS: Does this need rates, percentages, averages, sums, counts?
+            3. DETERMINE GROUPING: What should be grouped by (day of week, category, etc.)?
+            4. SPECIFY EXACT DATA TRANSFORMATION: How should raw data be processed?
+            5. CHOOSE OPTIMAL VISUALIZATION: What chart type best shows the answer?
+            6. SET PRECISE AXIS LABELS: What should X and Y axes represent?
             
-            CHART TYPE GUIDELINES:
-            - Bar charts: comparing categories/groups (X=categories, Y=values)
-            - Line charts: trends over time/sequence (X=time/sequence, Y=metric)
-            - Scatter plots: correlations between two numeric variables (X=variable1, Y=variable2)
-            - Pie/Donut charts: parts of a whole (percentages/proportions)
-            - Histograms: data distribution (X=value_ranges, Y=frequency/count)
-            - Area charts: cumulative trends or multiple series
+            SPECIAL HANDLING FOR COMMON PATTERNS:
+            - "Day of week" queries: Extract day name from date columns, group by day name
+            - "Rate" calculations: Identify numerator and denominator columns, calculate percentage
+            - "Highest/Lowest" queries: Sort results and show top/bottom values
+            - "Average/Mean" queries: Calculate averages within groups
+            - "Distribution" queries: Show frequency or count distributions
+            - "Trend" queries: Show changes over time periods
             
-            AXIS OPTIMIZATION:
-            - X-axis: independent variable (what you're grouping/measuring by)
-            - Y-axis: dependent variable (what you're measuring/counting)
-            - Use descriptive, business-friendly labels
-            - Consider data ranges and recommend optimal scaling
-            - Suggest number of data points for best readability (e.g., top 10, group small categories)
+            DATA PROCESSING INSTRUCTIONS:
+            - For date columns: Extract relevant time components (day of week, month, etc.)
+            - For rate calculations: Clearly specify formula (e.g., Opened / "No. of emails sent" * 100)
+            - For grouping: Specify exact grouping column and aggregation method
+            - For filtering: Define any necessary data filters
+            
+            VISUALIZATION GUIDELINES:
+            - Bar charts: Comparing categories or groups (X=category, Y=metric)
+            - Line charts: Trends over time (X=time_period, Y=metric)
+            - Pie charts: Parts of whole (percentages/proportions)
+            - Scatter plots: Relationships between two numeric variables
+            - Histograms: Distribution of values
+            
+            AXIS LABELING RULES:
+            - X-axis: The independent variable (what you're grouping by)
+            - Y-axis: The dependent variable (what you're measuring)
+            - Use business-friendly, descriptive labels
+            - Include units where applicable (%, $, count, etc.)
             
             Provide a JSON response with this exact structure:
             {
-                "queryType": "aggregation|filter|groupby|correlation|trend|distribution|comparison",
+                "queryType": "aggregation|groupby|calculation|filter|trend|distribution|comparison",
                 "targetColumns": ["primary_column", "secondary_column"],
-                "operation": "sum|avg|count|max|min|group|filter|compare|trend",
-                "filterConditions": {},
-                "chartType": "bar|line|pie|scatter|histogram|area|table",
-                "xAxisLabel": "Descriptive X-axis label",
-                "yAxisLabel": "Descriptive Y-axis label", 
-                "chartTitle": "Compelling chart title",
-                "expectedResult": "What insights this analysis will reveal",
+                "operation": "sum|avg|count|max|min|rate|percentage|group|filter|extract",
+                "calculationFormula": "specific formula if calculation needed (e.g., 'Opened / No. of emails sent * 100')",
+                "groupByColumn": "column to group by (e.g., day_of_week extracted from date)",
+                "dataTransformation": {
+                    "extractDayOfWeek": "date_column_name if needed",
+                    "calculateRate": {
+                        "numerator": "column_name",
+                        "denominator": "column_name"
+                    },
+                    "filterConditions": {},
+                    "sortBy": "column_name",
+                    "sortOrder": "asc|desc",
+                    "limit": "number_of_results"
+                },
+                "chartType": "bar|line|pie|scatter|histogram|area|bubble|radar|doughnut",
+                "xAxisLabel": "Descriptive X-axis label with units",
+                "yAxisLabel": "Descriptive Y-axis label with units", 
+                "chartTitle": "Clear, specific chart title answering the question",
+                "expectedDataStructure": [
+                    {
+                        "x_value": "example_x_value",
+                        "y_value": "example_y_value"
+                    }
+                ],
                 "visualization": {
-                    "type": "bar|line|pie|scatter|histogram|area|table",
-                    "xAxis": "column_name",
-                    "yAxis": "column_name_or_calculated_field", 
-                    "groupBy": "column_name_if_applicable",
-                    "dataLimit": "number_of_data_points_to_show",
-                    "sortBy": "how_to_sort_data_for_best_visual",
-                    "reasoning": "Why this chart type and axes were chosen for maximum insight"
+                    "type": "bar|line|pie|scatter|histogram|area|bubble|radar|doughnut",
+                    "xAxis": "exact_column_or_calculated_field",
+                    "yAxis": "exact_column_or_calculated_field", 
+                    "dataProcessing": "step-by-step data processing instructions",
+                    "reasoning": "Why this visualization and data processing approach"
                 },
-                "chartExplanation": {
-                    "xAxisMeaning": "What the X-axis represents for business users",
-                    "yAxisMeaning": "What the Y-axis represents for business users", 
-                    "dataPointMeaning": "What each bar/point/segment represents",
-                    "howToInterpret": "How to read and understand this chart",
-                    "keyInsights": "What patterns or insights to look for"
-                },
-                "dataOptimization": {
-                    "recommendedLimit": "optimal_number_of_data_points",
-                    "aggregationMethod": "how_to_group_or_aggregate_data",
-                    "filterSuggestion": "any_filters_to_apply_for_cleaner_visualization"
+                "businessInsight": {
+                    "questionAnswered": "Restate what question this analysis answers",
+                    "keyMetric": "The main metric being measured",
+                    "comparisonBasis": "What is being compared (days, categories, etc.)",
+                    "actionableInsight": "What business decision this data supports"
                 }
             }
             
-            Return ONLY valid JSON without any markdown formatting.`;
+            IMPORTANT: Return ONLY valid JSON without any markdown formatting or explanations.`;
 
             const result = await this.model.generateContent(prompt);
             const response = await result.response;
@@ -564,25 +764,37 @@ class AIService {
     generateFallbackQueryAnalysis(query, columns) {
         const lowerQuery = query.toLowerCase();
         let queryType = 'filter';
-        let chartType = 'table';
+        let chartType = 'bar'; // Default to bar chart instead of table
         let targetColumns = [];
         
-        // Simple pattern matching for fallback
+        // Enhanced pattern matching for better visualization defaults
         if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
             queryType = 'aggregation';
             chartType = 'bar';
-        } else if (lowerQuery.includes('group') || lowerQuery.includes('by')) {
+        } else if (lowerQuery.includes('group') || lowerQuery.includes('by') || lowerQuery.includes('compare')) {
             queryType = 'groupby';
             chartType = 'bar';
-        } else if (lowerQuery.includes('trend') || lowerQuery.includes('over time')) {
+        } else if (lowerQuery.includes('trend') || lowerQuery.includes('over time') || lowerQuery.includes('line')) {
             queryType = 'trend';
             chartType = 'line';
-        } else if (lowerQuery.includes('distribution')) {
+        } else if (lowerQuery.includes('distribution') || lowerQuery.includes('histogram')) {
             queryType = 'distribution';
             chartType = 'histogram';
-        } else if (lowerQuery.includes('correlation')) {
+        } else if (lowerQuery.includes('correlation') || lowerQuery.includes('scatter') || lowerQuery.includes('relationship')) {
             queryType = 'correlation';
             chartType = 'scatter';
+        } else if (lowerQuery.includes('pie') || lowerQuery.includes('donut') || lowerQuery.includes('percentage') || lowerQuery.includes('proportion')) {
+            queryType = 'groupby';
+            chartType = 'pie';
+        } else if (lowerQuery.includes('top') || lowerQuery.includes('highest') || lowerQuery.includes('lowest') || lowerQuery.includes('ranking')) {
+            queryType = 'sort';
+            chartType = 'bar';
+        } else if (lowerQuery.includes('bubble') || lowerQuery.includes('size')) {
+            queryType = 'correlation';
+            chartType = 'bubble';
+        } else if (lowerQuery.includes('area') || lowerQuery.includes('cumulative')) {
+            queryType = 'trend';
+            chartType = 'area';
         }
         
         // Try to identify relevant columns

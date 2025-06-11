@@ -74,6 +74,19 @@ class CSVDashboard {
         return this.cache.get(key);
     }
 
+    // Clear cache method for fresh suggestions
+    clearSuggestionCache() {
+        // Clear all suggestion-related cache entries
+        const keysToDelete = [];
+        for (const key of this.cache.keys()) {
+            if (key.includes('generateSuggestions')) {
+                keysToDelete.push(key);
+            }
+        }
+        keysToDelete.forEach(key => this.cache.delete(key));
+        console.log('Suggestion cache cleared for fresh results');
+    }
+
     // Debounce function for performance
     debounce(key, func, delay = 300) {
         if (this.debounceTimers.has(key)) {
@@ -916,43 +929,46 @@ class CSVDashboard {
             interestingSuggestions.push(`Show sankey diagram flow between ${categoricalColumns[0]} and ${categoricalColumns[1]}`);
         }
         
-        // Enhanced traditional suggestions with better descriptions
+        // Enhanced visualization-focused suggestions
         if (numericColumns.length > 0) {
-            interestingSuggestions.push(`What is the distribution pattern of ${numericColumns[0]}? Show me a histogram with statistical insights`);
-            interestingSuggestions.push(`Find outliers and anomalies in ${numericColumns[0]} data`);
-            interestingSuggestions.push(`Show top 10 highest ${numericColumns[0]} values with detailed breakdown`);
+            interestingSuggestions.push(`Create histogram showing distribution pattern of ${numericColumns[0]} with statistical insights`);
+            interestingSuggestions.push(`Show bar chart of top 10 highest ${numericColumns[0]} values`);
+            interestingSuggestions.push(`Generate box plot to find outliers and anomalies in ${numericColumns[0]} data`);
         }
         
         if (categoricalColumns.length > 0) {
-            interestingSuggestions.push(`Create an interactive pie chart breakdown of ${categoricalColumns[0]} categories`);
+            interestingSuggestions.push(`Create interactive pie chart breakdown of ${categoricalColumns[0]} categories`);
             interestingSuggestions.push(`Show percentage distribution of ${categoricalColumns[0]} with modern donut chart`);
+            interestingSuggestions.push(`Generate horizontal bar chart ranking ${categoricalColumns[0]} by frequency`);
         }
         
         if (numericColumns.length >= 2) {
-            interestingSuggestions.push(`Analyze correlation strength between ${numericColumns[0]} and ${numericColumns[1]} with scatter plot`);
-            interestingSuggestions.push(`Create density plot showing relationship between ${numericColumns[0]} and ${numericColumns[1]}`);
+            interestingSuggestions.push(`Create scatter plot showing correlation between ${numericColumns[0]} and ${numericColumns[1]}`);
+            interestingSuggestions.push(`Generate bubble chart with ${numericColumns[0]} vs ${numericColumns[1]} relationship`);
+            interestingSuggestions.push(`Show dual-axis line chart comparing ${numericColumns[0]} and ${numericColumns[1]} trends`);
         }
         
-        // Data insights and patterns
-        interestingSuggestions.push(`Show me the most interesting patterns and insights in this dataset`);
-        interestingSuggestions.push(`Create a comprehensive dashboard view of key metrics`);
-        interestingSuggestions.push(`Find and visualize the strongest relationships in the data`);
+        // Visual insights and patterns
+        interestingSuggestions.push(`Create comprehensive chart dashboard showing key visual insights`);
+        interestingSuggestions.push(`Generate multi-chart analysis revealing the strongest data patterns`);
+        interestingSuggestions.push(`Show interactive visualization highlighting the most important relationships`);
         
         // Performance and comparison analysis
         if (categoricalColumns.length >= 1 && numericColumns.length >= 1) {
-            interestingSuggestions.push(`Compare performance metrics across ${categoricalColumns[0]} using multi-series bar chart`);
-            interestingSuggestions.push(`Show ranking analysis of ${categoricalColumns[0]} by ${numericColumns[0]} with horizontal bar chart`);
+            interestingSuggestions.push(`Create multi-series bar chart comparing ${numericColumns[0]} across ${categoricalColumns[0]}`);
+            interestingSuggestions.push(`Generate horizontal bar chart ranking ${categoricalColumns[0]} by ${numericColumns[0]} values`);
+            interestingSuggestions.push(`Show stacked bar chart breaking down ${numericColumns[0]} by ${categoricalColumns[0]} categories`);
         }
         
         // Ensure we have at least 8-10 suggestions
         if (interestingSuggestions.length < 8) {
             const additionalSuggestions = [
-                `Create an advanced statistical summary with box plots`,
-                `Show data quality analysis with missing value patterns`,
-                `Generate predictive insights and trend forecasting`,
-                `Create interactive filter dashboard for data exploration`,
-                `Show comparative analysis with benchmark indicators`,
-                `Generate automated insights with AI-powered recommendations`
+                `Create advanced box plot analysis showing statistical distributions`,
+                `Generate radar chart for multi-dimensional data comparison`,
+                `Show area chart with trend forecasting and patterns`,
+                `Create interactive multi-chart dashboard for data exploration`,
+                `Generate comparative bar chart analysis with benchmark indicators`,
+                `Show heatmap visualization revealing data correlations and patterns`
             ];
             
             additionalSuggestions.forEach(suggestion => {
@@ -984,6 +1000,148 @@ class CSVDashboard {
         }
         
         this.displaySuggestions(interestingSuggestions.slice(0, 10));
+    }
+
+    // Enhanced method for generating data-aware, business-focused fallback suggestions
+    generateDataAwareFallbacks(data) {
+        if (!data || data.length === 0) return [];
+        
+        const columns = Object.keys(data[0]);
+        const suggestions = [];
+        
+        // Perform comprehensive data analysis
+        const analysis = this.analyzeDataForBusinessSuggestions(data, columns);
+        
+        // Priority 1: Performance & Ranking Queries (High Business Value)
+        if (analysis.numericColumns.length > 0 && analysis.categoricalColumns.length > 0) {
+            const numCol = analysis.numericColumns[0];
+            const catCol = analysis.categoricalColumns[0];
+            
+            suggestions.push(`Which ${catCol} has the highest ${numCol} performance?`);
+            suggestions.push(`Show top 10 ${catCol} ranked by ${numCol} values`);
+            suggestions.push(`Create performance comparison chart of ${numCol} across all ${catCol}`);
+            
+            // Add financial/business context if detected
+            if (analysis.hasFinancialData) {
+                suggestions.push(`Compare revenue performance across different ${catCol} categories`);
+            }
+            if (analysis.hasPerformanceData) {
+                suggestions.push(`Show performance ranking analysis by ${catCol} with ${numCol} metrics`);
+            }
+        }
+        
+        // Priority 2: Distribution & Pattern Analysis
+        if (analysis.numericColumns.length > 0) {
+            const numCol = analysis.numericColumns[0];
+            suggestions.push(`Show distribution pattern of ${numCol} with detailed histogram analysis`);
+            suggestions.push(`Find outliers and anomalies in ${numCol} data using statistical visualization`);
+            
+            if (analysis.numericColumns.length > 1) {
+                const numCol2 = analysis.numericColumns[1];
+                suggestions.push(`What's the correlation between ${numCol} and ${numCol2}?`);
+                suggestions.push(`Create scatter plot showing ${numCol} vs ${numCol2} relationship patterns`);
+            }
+        }
+        
+        // Priority 3: Composition & Breakdown Analysis
+        if (analysis.categoricalColumns.length > 0) {
+            const catCol = analysis.categoricalColumns[0];
+            suggestions.push(`Show percentage breakdown of ${catCol} categories with interactive pie chart`);
+            suggestions.push(`What's the composition distribution of ${catCol} in the dataset?`);
+            
+            if (analysis.categoricalColumns.length > 1) {
+                const catCol2 = analysis.categoricalColumns[1];
+                suggestions.push(`Compare distribution patterns between ${catCol} and ${catCol2} categories`);
+            }
+        }
+        
+        // Priority 4: Time-based Analysis (if applicable)
+        if (analysis.dateColumns.length > 0 && analysis.numericColumns.length > 0) {
+            const dateCol = analysis.dateColumns[0];
+            const numCol = analysis.numericColumns[0];
+            suggestions.push(`Show ${numCol} trend over ${dateCol} with comprehensive line chart`);
+            suggestions.push(`How has ${numCol} performance changed over time in ${dateCol}?`);
+        }
+        
+        // Priority 5: Advanced Business Insights
+        if (suggestions.length < 8) {
+            if (analysis.hasBusinessMetrics) {
+                suggestions.push(`Create executive dashboard showing key business performance indicators`);
+                suggestions.push(`Show comprehensive business metrics analysis with multiple chart views`);
+            } else {
+                suggestions.push(`Generate multi-dimensional analysis revealing key data patterns`);
+                suggestions.push(`Create comprehensive visualization dashboard of important insights`);
+            }
+            
+            suggestions.push(`Show the most significant relationships and trends in this dataset`);
+            suggestions.push(`Generate actionable insights visualization for decision-making`);
+        }
+        
+        return suggestions.slice(0, 10);
+    }
+
+    // New method for business-focused data analysis
+    analyzeDataForBusinessSuggestions(data, columns) {
+        const analysis = {
+            numericColumns: [],
+            categoricalColumns: [],
+            dateColumns: [],
+            hasFinancialData: false,
+            hasPerformanceData: false,
+            hasBusinessMetrics: false,
+            businessContext: []
+        };
+        
+        columns.forEach(col => {
+            const values = data.slice(0, 50).map(row => row[col]).filter(val => val !== null && val !== undefined && val !== '');
+            const uniqueValues = [...new Set(values)];
+            const numericValues = values.filter(val => !isNaN(parseFloat(val)) && isFinite(val));
+            const lowerCol = col.toLowerCase();
+            
+            // Classify column types with business context
+            if (numericValues.length > values.length * 0.7) {
+                analysis.numericColumns.push(col);
+                
+                // Detect business-relevant numeric data
+                if (lowerCol.includes('price') || lowerCol.includes('cost') || lowerCol.includes('revenue') || 
+                    lowerCol.includes('sales') || lowerCol.includes('amount') || lowerCol.includes('value') ||
+                    lowerCol.includes('profit') || lowerCol.includes('income')) {
+                    analysis.hasFinancialData = true;
+                    analysis.businessContext.push(`${col}: Financial metric`);
+                } else if (lowerCol.includes('score') || lowerCol.includes('rating') || lowerCol.includes('performance') ||
+                          lowerCol.includes('efficiency') || lowerCol.includes('quality')) {
+                    analysis.hasPerformanceData = true;
+                    analysis.businessContext.push(`${col}: Performance indicator`);
+                } else if (lowerCol.includes('count') || lowerCol.includes('quantity') || lowerCol.includes('number') ||
+                          lowerCol.includes('volume') || lowerCol.includes('units')) {
+                    analysis.businessContext.push(`${col}: Quantity measure`);
+                }
+            } else if (uniqueValues.length < values.length * 0.5 && uniqueValues.length > 1 && uniqueValues.length < 25) {
+                analysis.categoricalColumns.push(col);
+                
+                // Detect business-relevant categorical data
+                if (lowerCol.includes('department') || lowerCol.includes('category') || lowerCol.includes('type') || 
+                    lowerCol.includes('group') || lowerCol.includes('class') || lowerCol.includes('segment')) {
+                    analysis.businessContext.push(`${col}: Business classification`);
+                } else if (lowerCol.includes('status') || lowerCol.includes('state') || lowerCol.includes('condition') ||
+                          lowerCol.includes('stage') || lowerCol.includes('phase')) {
+                    analysis.businessContext.push(`${col}: Status indicator`);
+                } else if (lowerCol.includes('region') || lowerCol.includes('location') || lowerCol.includes('area') ||
+                          lowerCol.includes('territory') || lowerCol.includes('zone')) {
+                    analysis.businessContext.push(`${col}: Geographic dimension`);
+                }
+            } else if (lowerCol.includes('date') || lowerCol.includes('time') || lowerCol.includes('year') || 
+                      lowerCol.includes('month') || lowerCol.includes('day') || lowerCol.includes('period')) {
+                analysis.dateColumns.push(col);
+                analysis.businessContext.push(`${col}: Time dimension`);
+            }
+        });
+        
+        // Determine if we have business metrics
+        analysis.hasBusinessMetrics = analysis.hasFinancialData || analysis.hasPerformanceData || 
+                                     (analysis.numericColumns.length > 0 && analysis.categoricalColumns.length > 0);
+        
+        return analysis;
     }
     
     // Enhanced file info display with accurate statistics
@@ -1155,7 +1313,10 @@ class CSVDashboard {
     async generateSuggestions() {
         if (!this.csvData) return;
         
-        // Check cache first
+        // Clear old suggestion cache to ensure fresh, improved suggestions
+        this.clearSuggestionCache();
+        
+        // Check cache first (will be empty after clearing, but keeping for future calls)
         const cacheKey = this.getCacheKey('generateSuggestions', this.csvData.slice(0, 10));
         const cachedSuggestions = this.getCache(cacheKey);
         
@@ -1170,8 +1331,9 @@ class CSVDashboard {
             const aiService = await this.waitForAIService();
             
             if (!aiService || !aiService.hasValidApiKey()) {
-                console.log('No API key configured, using fallback suggestions');
-                this.displayFallbackSuggestions();
+                console.log('No API key configured, using enhanced data-aware fallback suggestions');
+                const dataAwareSuggestions = this.generateDataAwareFallbacks(this.csvData);
+                this.displaySuggestions(dataAwareSuggestions);
                 return;
             }
             
@@ -1187,12 +1349,14 @@ class CSVDashboard {
                 this.setCache(cacheKey, result.suggestions);
                 this.displaySuggestions(result.suggestions);
             } else {
-                console.log('AI suggestions failed, using fallback');
-                this.displayFallbackSuggestions();
+                console.log('AI suggestions failed, using enhanced data-aware fallback');
+                const dataAwareSuggestions = this.generateDataAwareFallbacks(this.csvData);
+                this.displaySuggestions(dataAwareSuggestions);
             }
         } catch (error) {
             console.error('Error generating suggestions:', error);
-            this.displayFallbackSuggestions();
+            const dataAwareSuggestions = this.generateDataAwareFallbacks(this.csvData);
+            this.displaySuggestions(dataAwareSuggestions);
         } finally {
             this.showLoading(false);
         }
@@ -1488,7 +1652,7 @@ class CSVDashboard {
             type: 'filter',
             data: filteredData.slice(0, 100), // Limit to first 100 results
             columns: columns,
-            chartType: 'table',
+            chartType: 'bar',
             summary: `Filtered data: ${filteredData.length} records match the criteria`
         };
     }
@@ -1553,6 +1717,9 @@ class CSVDashboard {
         console.log('Displaying results:', result);
         this.filteredData = result.data || this.csvData;
         
+        // Store query structure for chart rendering
+        this.currentQueryStructure = result.queryStructure || null;
+        
         // Display AI summary if available
         if (result.aiSummary) {
             this.displayAISummary(result.aiSummary);
@@ -1583,7 +1750,6 @@ class CSVDashboard {
                     <div class="ai-summary-icon">🤖</div>
                     <div class="ai-summary-title">
                         <h4>AI Analysis Summary</h4>
-                        <span class="ai-summary-badge">Powered by Gemini AI</span>
                     </div>
                 </div>
                 <div class="ai-summary-content">
@@ -1743,7 +1909,7 @@ class CSVDashboard {
             
             Original Query: "${query}"
             Query Type: ${queryStructure?.queryType || result.type || 'analysis'}
-            Chart Type: ${result.chartType || 'table'}
+                            Chart Type: ${result.chartType || 'bar'}
             
             Results Summary:
             - Total Records Analyzed: ${Array.isArray(data) ? data.length : 1}
@@ -1968,7 +2134,7 @@ class CSVDashboard {
                     </div>
                     <div class="info-item">
                         <span class="info-label">Chart Type:</span>
-                        <span class="info-value">${result.chartType || 'Table'}</span>
+                        <span class="info-value">${result.chartType || 'Bar Chart'}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Data Points:</span>
@@ -1994,9 +2160,9 @@ class CSVDashboard {
         }
 
         // If chart type is table, hide canvas and show table instead
-        if (result.chartType === 'table' || !result.data || result.data.length === 0) {
+        if (!result.data || result.data.length === 0) {
             canvas.style.display = 'none';
-            container.innerHTML = '<div class="no-chart-message">📊 Switch to Table view to see your data</div>';
+            container.innerHTML = '<div class="no-chart-message">📊 No data available for visualization</div>';
             return;
         }
 
@@ -2059,6 +2225,18 @@ class CSVDashboard {
     }
 
     createBarChart(data, colors) {
+        // Get axis labels from query structure if available
+        let xAxisLabel = 'Category';
+        let yAxisLabel = 'Value';
+        let chartTitle = 'Data Visualization';
+        
+        // Check if we have query structure with proper labels
+        if (this.currentQueryStructure) {
+            xAxisLabel = this.currentQueryStructure.xAxisLabel || xAxisLabel;
+            yAxisLabel = this.currentQueryStructure.yAxisLabel || yAxisLabel;
+            chartTitle = this.currentQueryStructure.chartTitle || chartTitle;
+        }
+
         const labels = data.map(item => {
             // Find the most appropriate label field
             const keys = Object.keys(item);
@@ -2066,7 +2244,10 @@ class CSVDashboard {
                 typeof item[key] === 'string' || 
                 key.toLowerCase().includes('name') || 
                 key.toLowerCase().includes('category') ||
-                key.toLowerCase().includes('group')
+                key.toLowerCase().includes('group') ||
+                key.toLowerCase().includes('day') ||
+                key.toLowerCase().includes('week') ||
+                key.toLowerCase().includes('month')
             ) || keys[0];
             return item[labelKey];
         });
@@ -2086,7 +2267,7 @@ class CSVDashboard {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Values',
+                    label: yAxisLabel,
                     data: values,
                     backgroundColor: colors.map(color => color + '80'), // Add transparency
                     borderColor: colors,
@@ -2099,6 +2280,15 @@ class CSVDashboard {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: 20
+                    },
                     legend: {
                         display: false
                     },
@@ -2109,12 +2299,28 @@ class CSVDashboard {
                         borderColor: 'rgba(255, 255, 255, 0.2)',
                         borderWidth: 1,
                         cornerRadius: 8,
-                        displayColors: false
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                return `${yAxisLabel}: ${context.parsed.y}`;
+                            }
+                        }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: yAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
                             color: 'rgba(0, 0, 0, 0.1)'
                         },
@@ -2123,6 +2329,14 @@ class CSVDashboard {
                         }
                     },
                     x: {
+                        title: {
+                            display: true,
+                            text: xAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
                             display: false
                         },
@@ -2141,12 +2355,27 @@ class CSVDashboard {
     }
 
     createLineChart(data, colors) {
+        // Get axis labels from query structure if available
+        let xAxisLabel = 'Category';
+        let yAxisLabel = 'Value';
+        let chartTitle = 'Trend Analysis';
+        
+        // Check if we have query structure with proper labels
+        if (this.currentQueryStructure) {
+            xAxisLabel = this.currentQueryStructure.xAxisLabel || xAxisLabel;
+            yAxisLabel = this.currentQueryStructure.yAxisLabel || yAxisLabel;
+            chartTitle = this.currentQueryStructure.chartTitle || chartTitle;
+        }
+
         const labels = data.map((item, index) => {
             const keys = Object.keys(item);
             const labelKey = keys.find(key => 
                 typeof item[key] === 'string' || 
                 key.toLowerCase().includes('date') || 
-                key.toLowerCase().includes('time')
+                key.toLowerCase().includes('time') ||
+                key.toLowerCase().includes('day') ||
+                key.toLowerCase().includes('week') ||
+                key.toLowerCase().includes('month')
             ) || index.toString();
             return item[labelKey] || index;
         });
@@ -2165,7 +2394,7 @@ class CSVDashboard {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Trend',
+                    label: yAxisLabel,
                     data: values,
                     borderColor: colors[0],
                     backgroundColor: colors[0] + '20',
@@ -2183,6 +2412,15 @@ class CSVDashboard {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: 20
+                    },
                     legend: {
                         display: false
                     },
@@ -2192,12 +2430,29 @@ class CSVDashboard {
                         bodyColor: 'white',
                         borderColor: 'rgba(255, 255, 255, 0.2)',
                         borderWidth: 1,
-                        cornerRadius: 8
+                        cornerRadius: 8,
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                return `${yAxisLabel}: ${context.parsed.y}`;
+                            }
+                        }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: yAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
                             color: 'rgba(0, 0, 0, 0.1)'
                         },
@@ -2206,32 +2461,59 @@ class CSVDashboard {
                         }
                     },
                     x: {
+                        title: {
+                            display: true,
+                            text: xAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
-                            display: false
+                            color: 'rgba(0, 0, 0, 0.05)'
                         },
                         ticks: {
-                            color: '#6B7280'
+                            color: '#6B7280',
+                            maxRotation: 45
                         }
                     }
                 },
                 animation: {
                     duration: 1500,
-                    easing: 'easeInOutCubic'
+                    easing: 'easeInOutQuart'
                 }
             }
         };
     }
 
     createPieChart(data, colors) {
+        // Get chart title from query structure if available
+        let chartTitle = 'Distribution';
+        
+        // Check if we have query structure with proper labels
+        if (this.currentQueryStructure) {
+            chartTitle = this.currentQueryStructure.chartTitle || chartTitle;
+        }
+
         const labels = data.map(item => {
             const keys = Object.keys(item);
-            const labelKey = keys.find(key => typeof item[key] === 'string') || keys[0];
+            const labelKey = keys.find(key => 
+                typeof item[key] === 'string' || 
+                key.toLowerCase().includes('name') || 
+                key.toLowerCase().includes('category') ||
+                key.toLowerCase().includes('group') ||
+                key.toLowerCase().includes('day') ||
+                key.toLowerCase().includes('week')
+            ) || keys[0];
             return item[labelKey];
         });
 
         const values = data.map(item => {
             const keys = Object.keys(item);
-            const valueKey = keys.find(key => typeof item[key] === 'number') || keys[1];
+            const valueKey = keys.find(key => 
+                typeof item[key] === 'number' || 
+                !isNaN(parseFloat(item[key]))
+            );
             return parseFloat(item[valueKey]) || 0;
         });
 
@@ -2244,19 +2526,31 @@ class CSVDashboard {
                     backgroundColor: colors,
                     borderColor: '#FFFFFF',
                     borderWidth: 3,
-                    hoverOffset: 10
+                    hoverBorderWidth: 4,
+                    hoverBorderColor: '#FFFFFF'
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: 20
+                    },
                     legend: {
-                        position: 'right',
+                        position: 'bottom',
                         labels: {
                             padding: 20,
                             usePointStyle: true,
-                            color: '#374151'
+                            font: {
+                                size: 12
+                            }
                         }
                     },
                     tooltip: {
@@ -2265,12 +2559,20 @@ class CSVDashboard {
                         bodyColor: 'white',
                         borderColor: 'rgba(255, 255, 255, 0.2)',
                         borderWidth: 1,
-                        cornerRadius: 8
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${context.label}: ${context.parsed} (${percentage}%)`;
+                            }
+                        }
                     }
                 },
                 animation: {
                     animateRotate: true,
-                    duration: 1200
+                    animateScale: true,
+                    duration: 1500
                 }
             }
         };
@@ -2675,11 +2977,16 @@ class CSVDashboard {
         try {
             const { queryType, targetColumns, operation, filterConditions, chartType } = queryStructure;
             
+            // Check if we need advanced data processing
+            if (queryStructure.dataTransformation) {
+                return await this.processAdvancedQuery(queryStructure, originalQuery);
+            }
+            
             // Default result structure
             let result = {
                 type: queryType,
                 data: [],
-                chartType: chartType || 'table',
+                chartType: chartType || 'bar',
                 summary: '',
                 queryStructure: queryStructure
             };
@@ -2715,7 +3022,7 @@ class CSVDashboard {
                 result = {
                     ...result,
                     ...analysisResult,
-                    chartType: chartType || analysisResult.chartType || 'table',
+                    chartType: chartType || analysisResult.chartType || 'bar',
                     queryStructure: queryStructure
                 };
             } else {
@@ -2723,7 +3030,7 @@ class CSVDashboard {
                 result = {
                     ...result,
                     data: this.csvData.slice(0, 20),
-                    chartType: 'table',
+                    chartType: 'bar',
                     summary: `Could not process "${originalQuery}" - showing sample data instead`,
                     error: 'Analysis failed - check column names and data types'
                 };
@@ -2737,8 +3044,121 @@ class CSVDashboard {
             return {
                 type: 'filter',
                 data: this.csvData.slice(0, 20),
-                chartType: 'table',
+                chartType: 'bar',
                 summary: `Error processing query: ${error.message}`,
+                error: error.message,
+                queryStructure: queryStructure
+            };
+        }
+    }
+
+    async processAdvancedQuery(queryStructure, originalQuery) {
+        try {
+            const { dataTransformation, chartType, targetColumns } = queryStructure;
+            let processedData = [...this.csvData];
+            
+            // Extract day of week if needed
+            if (dataTransformation.extractDayOfWeek) {
+                const dateColumn = dataTransformation.extractDayOfWeek;
+                processedData = processedData.map(row => {
+                    const dateValue = row[dateColumn];
+                    if (dateValue) {
+                        const date = new Date(dateValue);
+                        if (!isNaN(date.getTime())) {
+                            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                            row.day_of_week = dayNames[date.getDay()];
+                        }
+                    }
+                    return row;
+                });
+            }
+            
+            // Calculate rates if needed
+            if (dataTransformation.calculateRate) {
+                const { numerator, denominator } = dataTransformation.calculateRate;
+                processedData = processedData.map(row => {
+                    const num = parseFloat(row[numerator]) || 0;
+                    const den = parseFloat(row[denominator]) || 1;
+                    row.calculated_rate = den > 0 ? (num / den * 100) : 0;
+                    return row;
+                });
+            }
+            
+            // Group by specified column
+            if (queryStructure.groupByColumn) {
+                const groupBy = queryStructure.groupByColumn;
+                const groups = {};
+                
+                processedData.forEach(row => {
+                    const key = row[groupBy] || row.day_of_week || 'Unknown';
+                    if (!groups[key]) {
+                        groups[key] = [];
+                    }
+                    groups[key].push(row);
+                });
+                
+                // Calculate aggregated values for each group
+                const aggregatedData = Object.entries(groups).map(([key, rows]) => {
+                    const result = { [groupBy]: key };
+                    
+                    if (dataTransformation.calculateRate) {
+                        // Calculate average rate for the group
+                        const rates = rows.map(row => row.calculated_rate || 0);
+                        result.rate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+                    } else if (targetColumns && targetColumns.length > 1) {
+                        // Calculate average of target column
+                        const values = rows.map(row => parseFloat(row[targetColumns[1]]) || 0);
+                        result[targetColumns[1]] = values.reduce((sum, val) => sum + val, 0) / values.length;
+                    } else {
+                        // Just count
+                        result.count = rows.length;
+                    }
+                    
+                    return result;
+                });
+                
+                // Sort if specified
+                if (dataTransformation.sortBy && dataTransformation.sortOrder) {
+                    const sortKey = dataTransformation.sortBy === 'rate' ? 'rate' : 
+                                   dataTransformation.sortBy === 'count' ? 'count' : 
+                                   targetColumns?.[1] || 'count';
+                    
+                    aggregatedData.sort((a, b) => {
+                        const aVal = a[sortKey] || 0;
+                        const bVal = b[sortKey] || 0;
+                        return dataTransformation.sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+                    });
+                }
+                
+                // Limit results if specified
+                if (dataTransformation.limit) {
+                    aggregatedData.splice(parseInt(dataTransformation.limit));
+                }
+                
+                return {
+                    type: queryStructure.queryType,
+                    data: aggregatedData,
+                    chartType: chartType || 'bar',
+                    summary: `Processed ${aggregatedData.length} groups from ${processedData.length} records`,
+                    queryStructure: queryStructure
+                };
+            }
+            
+            return {
+                type: queryStructure.queryType,
+                data: processedData.slice(0, 50),
+                chartType: chartType || 'bar',
+                summary: `Processed ${processedData.length} records`,
+                queryStructure: queryStructure
+            };
+            
+        } catch (error) {
+            console.error('Error in advanced query processing:', error);
+            return {
+                type: 'filter',
+                data: this.csvData.slice(0, 20),
+                chartType: 'bar',
+                summary: `Error processing advanced query: ${error.message}`,
                 error: error.message,
                 queryStructure: queryStructure
             };
@@ -2759,7 +3179,7 @@ class CSVDashboard {
         return {
             type: 'filter',
             data: this.csvData.slice(0, 50),
-            chartType: 'table',
+            chartType: 'bar',
             summary: `Showing first 50 records for query: "${query}"`
         };
     }
@@ -2783,7 +3203,7 @@ class CSVDashboard {
                 return {
                     type: 'display',
                     data: this.csvData.slice(0, 20),
-                    chartType: 'table',
+                    chartType: 'bar',
                     summary: `Displaying data for: ${originalQuery}`
                 };
         }

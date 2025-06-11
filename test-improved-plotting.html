@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Improved Plotting System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-title {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .sample-data {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        .expected-behavior {
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #28a745;
+        }
+        .test-queries {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #ffc107;
+        }
+        .improvement-list {
+            background: #d1ecf1;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #17a2b8;
+        }
+        code {
+            background: #f1f1f1;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 class="test-title">🚀 Improved AI Plotting System Test</h1>
+        
+        <div class="improvement-list">
+            <h3>✅ Key Improvements Made:</h3>
+            <ul>
+                <li><strong>Enhanced AI System Prompt:</strong> More specific instructions for data analysis and visualization</li>
+                <li><strong>Advanced Data Processing:</strong> New <code>processAdvancedQuery()</code> method handles complex transformations</li>
+                <li><strong>Day of Week Extraction:</strong> Automatically extracts day names from date columns</li>
+                <li><strong>Rate Calculations:</strong> Handles percentage/rate calculations (e.g., open rate = opened/sent * 100)</li>
+                <li><strong>Proper Axis Labels:</strong> Uses AI-provided axis labels and chart titles</li>
+                <li><strong>Smart Data Grouping:</strong> Groups data by meaningful categories (days, categories, etc.)</li>
+            </ul>
+        </div>
+
+        <div class="sample-data">
+            <h3>📊 Sample Email Campaign Data Structure:</h3>
+            <pre>
+Date,Campaign,Emails_Sent,Opened,Clicked,Day_of_Week
+2024-01-01,New_Year,1000,250,50,Monday
+2024-01-02,Welcome,800,200,40,Tuesday
+2024-01-03,Product_Launch,1200,360,72,Wednesday
+2024-01-04,Newsletter,900,270,54,Thursday
+2024-01-05,Promotion,1100,330,66,Friday
+2024-01-06,Weekend_Special,600,120,24,Saturday
+2024-01-07,Sunday_Digest,500,75,15,Sunday
+            </pre>
+        </div>
+
+        <div class="test-queries">
+            <h3>🔍 Test Queries That Should Now Work Correctly:</h3>
+            <ol>
+                <li><strong>"Which Day of the week yields the highest open rate?"</strong>
+                    <ul>
+                        <li>Should extract day of week from Date column</li>
+                        <li>Calculate open rate: (Opened / Emails_Sent) * 100</li>
+                        <li>Group by day of week</li>
+                        <li>X-axis: Day of Week, Y-axis: Open Rate (%)</li>
+                    </ul>
+                </li>
+                <li><strong>"Show me click rates by campaign type"</strong>
+                    <ul>
+                        <li>Calculate click rate: (Clicked / Emails_Sent) * 100</li>
+                        <li>Group by Campaign</li>
+                        <li>X-axis: Campaign, Y-axis: Click Rate (%)</li>
+                    </ul>
+                </li>
+                <li><strong>"What's the trend of email opens over time?"</strong>
+                    <ul>
+                        <li>Use Date for X-axis</li>
+                        <li>Use Opened count for Y-axis</li>
+                        <li>Line chart showing trend</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+
+        <div class="expected-behavior">
+            <h3>✅ Expected Behavior After Improvements:</h3>
+            <ul>
+                <li><strong>Correct Data Processing:</strong> AI will identify that "day of week" requires date extraction</li>
+                <li><strong>Accurate Calculations:</strong> Open rate will be calculated as percentage, not raw numbers</li>
+                <li><strong>Proper Axis Labels:</strong> X-axis will show "Day of Week", Y-axis will show "Open Rate (%)"</li>
+                <li><strong>Meaningful Chart Title:</strong> "Open Rate by Day of Week" instead of generic title</li>
+                <li><strong>Correct Data Grouping:</strong> Data grouped by day names (Monday, Tuesday, etc.) not dates</li>
+                <li><strong>Smart Sorting:</strong> Results sorted by highest open rate first</li>
+            </ul>
+        </div>
+
+        <div class="test-container">
+            <h3>🔧 Technical Implementation Details:</h3>
+            <ul>
+                <li><strong>AI Prompt Enhancement:</strong> Added specific patterns for "day of week", "rate calculations", etc.</li>
+                <li><strong>Data Transformation Pipeline:</strong> 
+                    <ol>
+                        <li>Extract day of week from date columns</li>
+                        <li>Calculate rates/percentages as needed</li>
+                        <li>Group data by specified columns</li>
+                        <li>Sort and limit results</li>
+                    </ol>
+                </li>
+                <li><strong>Chart Configuration:</strong> Uses AI-provided axis labels and titles</li>
+                <li><strong>Fallback Handling:</strong> Graceful degradation if AI analysis fails</li>
+            </ul>
+        </div>
+
+        <div style="background: #f8d7da; padding: 15px; border-radius: 4px; border-left: 4px solid #dc3545; margin-top: 20px;">
+            <h3>🧪 How to Test:</h3>
+            <ol>
+                <li>Upload a CSV file with date and numeric columns</li>
+                <li>Try the query: <code>"Which Day of the week yields the highest open rate?"</code></li>
+                <li>Verify that:
+                    <ul>
+                        <li>X-axis shows day names (Monday, Tuesday, etc.)</li>
+                        <li>Y-axis shows percentage values with "%" label</li>
+                        <li>Chart title is descriptive and relevant</li>
+                        <li>Data is properly grouped and calculated</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+    </div>
+</body>
+</html> 
