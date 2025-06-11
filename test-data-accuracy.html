@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Accuracy Validation Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .test-container {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .test-title {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        .critical-section {
+            background: #fff5f5;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #e53e3e;
+            margin: 15px 0;
+        }
+        .success-section {
+            background: #f0fff4;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #38a169;
+            margin: 15px 0;
+        }
+        .test-data {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            border: 1px solid #e2e8f0;
+        }
+        .validation-checklist {
+            background: #fffaf0;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #ed8936;
+        }
+        .math-example {
+            background: #edf2f7;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        .expected-result {
+            background: #e6fffa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 2px solid #38b2ac;
+            margin: 10px 0;
+        }
+        code {
+            background: #f1f5f9;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #e53e3e;
+        }
+        .improvement-badge {
+            display: inline-block;
+            background: #48bb78;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 class="test-title">🎯 100% Data Accuracy Validation Test</h1>
+        
+        <div class="critical-section">
+            <h2>🚨 CRITICAL FIXES IMPLEMENTED</h2>
+            <div class="improvement-badge">Column Detection</div>
+            <div class="improvement-badge">Rate Calculations</div>
+            <div class="improvement-badge">Data Validation</div>
+            <div class="improvement-badge">Error Handling</div>
+            <div class="improvement-badge">Axis Labeling</div>
+            
+            <h3>Key Problems Solved:</h3>
+            <ul>
+                <li><strong>❌ Wrong Calculations:</strong> Fixed rate calculation logic (sum/sum vs avg of avgs)</li>
+                <li><strong>❌ Column Mismatching:</strong> Added flexible column detection with fallbacks</li>
+                <li><strong>❌ Invalid Grouping:</strong> Improved day-of-week extraction and validation</li>
+                <li><strong>❌ Poor Error Handling:</strong> Added comprehensive validation and debugging</li>
+                <li><strong>❌ Generic Axis Labels:</strong> Now uses AI-provided specific labels</li>
+            </ul>
+        </div>
+
+        <div class="test-data">
+            <h3>📊 Test Dataset - Email Campaign Data:</h3>
+            <pre>
+Date,Campaign_Type,Emails_Sent,Opened,Clicked,Bounced
+2024-01-01,Newsletter,1000,250,50,10
+2024-01-02,Promotion,800,200,40,5
+2024-01-03,Welcome,1200,360,72,15
+2024-01-04,Newsletter,900,270,54,8
+2024-01-05,Promotion,1100,330,66,12
+2024-01-06,Welcome,600,120,24,3
+2024-01-07,Newsletter,500,75,15,2
+2024-01-08,Promotion,1300,390,78,18
+2024-01-09,Welcome,700,210,42,7
+2024-01-10,Newsletter,950,285,57,9
+            </pre>
+        </div>
+
+        <div class="validation-checklist">
+            <h3>✅ VALIDATION CHECKLIST - Test These Queries:</h3>
+            
+            <div class="math-example">
+                <h4>Query 1: "Which day of the week yields the highest open rate?"</h4>
+                <strong>Expected Processing:</strong>
+                <ol>
+                    <li>Extract day names from Date column (Monday, Tuesday, etc.)</li>
+                    <li>Group emails by day of week</li>
+                    <li>Calculate: (Sum of Opened) / (Sum of Emails_Sent) × 100 for each day</li>
+                    <li>Sort by highest rate</li>
+                </ol>
+                
+                <div class="expected-result">
+                    <strong>Manual Calculation Example:</strong><br>
+                    Monday (2024-01-01): 250/1000 = 25.0%<br>
+                    Tuesday (2024-01-02): 200/800 = 25.0%<br>
+                    Wednesday (2024-01-03): 360/1200 = 30.0%<br>
+                    <em>Expected Winner: Wednesday with 30.0% open rate</em>
+                </div>
+            </div>
+
+            <div class="math-example">
+                <h4>Query 2: "Show me click rates by campaign type"</h4>
+                <strong>Expected Processing:</strong>
+                <ol>
+                    <li>Group by Campaign_Type</li>
+                    <li>Calculate: (Sum of Clicked) / (Sum of Emails_Sent) × 100 for each type</li>
+                    <li>Sort by highest rate</li>
+                </ol>
+                
+                <div class="expected-result">
+                    <strong>Manual Calculation:</strong><br>
+                    Newsletter: (50+54+15+57)/(1000+900+500+950) = 176/3350 = 5.25%<br>
+                    Promotion: (40+66+78)/(800+1100+1300) = 184/3200 = 5.75%<br>
+                    Welcome: (72+24+42)/(1200+600+700) = 138/2500 = 5.52%<br>
+                    <em>Expected Winner: Promotion with 5.75% click rate</em>
+                </div>
+            </div>
+
+            <div class="math-example">
+                <h4>Query 3: "What's the average number of emails opened per day?"</h4>
+                <strong>Expected Processing:</strong>
+                <ol>
+                    <li>Group by Date (or day of week)</li>
+                    <li>Calculate average of Opened column</li>
+                    <li>Show results with proper axis labels</li>
+                </ol>
+                
+                <div class="expected-result">
+                    <strong>Manual Calculation:</strong><br>
+                    Total Opened: 250+200+360+270+330+120+75+390+210+285 = 2490<br>
+                    Total Days: 10<br>
+                    Average: 2490/10 = 249 emails opened per day<br>
+                </div>
+            </div>
+        </div>
+
+        <div class="success-section">
+            <h3>🎯 VALIDATION CRITERIA - Must Pass 100%</h3>
+            
+            <h4>📊 Chart Accuracy:</h4>
+            <ul>
+                <li>✅ X-axis shows correct categories (day names, not dates)</li>
+                <li>✅ Y-axis shows correct values (percentages for rates, counts for totals)</li>
+                <li>✅ Chart title is specific and descriptive</li>
+                <li>✅ Axis labels include units (%, count, etc.)</li>
+                <li>✅ Data is sorted correctly (highest to lowest for "highest" queries)</li>
+            </ul>
+
+            <h4>🧮 Calculation Accuracy:</h4>
+            <ul>
+                <li>✅ Rates calculated as: (sum of numerators) / (sum of denominators) × 100</li>
+                <li>✅ Averages calculated as: sum of all values / count of values</li>
+                <li>✅ Grouping produces correct number of categories</li>
+                <li>✅ Day of week extraction works for all date formats</li>
+                <li>✅ No division by zero errors</li>
+            </ul>
+
+            <h4>🔍 Data Processing:</h4>
+            <ul>
+                <li>✅ Column detection works with partial matches</li>
+                <li>✅ Handles missing or invalid data gracefully</li>
+                <li>✅ Provides detailed error messages when processing fails</li>
+                <li>✅ Console logs show step-by-step processing</li>
+                <li>✅ Results match manual calculations exactly</li>
+            </ul>
+        </div>
+
+        <div class="critical-section">
+            <h3>🚨 ZERO TOLERANCE ERRORS</h3>
+            <p><strong>These issues must NEVER occur:</strong></p>
+            <ul>
+                <li>❌ Wrong axis labels (showing dates instead of day names)</li>
+                <li>❌ Incorrect calculations (averaging averages instead of using raw data)</li>
+                <li>❌ Missing data validation (processing invalid columns)</li>
+                <li>❌ Generic chart titles ("Data Visualization" instead of specific titles)</li>
+                <li>❌ Inconsistent results between AI summary and chart data</li>
+                <li>❌ Processing errors without clear error messages</li>
+            </ul>
+        </div>
+
+        <div class="test-container">
+            <h3>🧪 HOW TO TEST</h3>
+            <ol>
+                <li><strong>Upload the test dataset above</strong> (copy to CSV file)</li>
+                <li><strong>Run each validation query</strong> exactly as written</li>
+                <li><strong>Verify calculations manually</strong> using the provided formulas</li>
+                <li><strong>Check chart elements:</strong>
+                    <ul>
+                        <li>X-axis label and values</li>
+                        <li>Y-axis label and values</li>
+                        <li>Chart title</li>
+                        <li>Data sorting</li>
+                    </ul>
+                </li>
+                <li><strong>Compare AI summary</strong> with actual chart data</li>
+                <li><strong>Check console logs</strong> for processing details</li>
+            </ol>
+        </div>
+
+        <div style="background: #2d3748; color: white; padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <h3>🎯 SUCCESS CRITERIA</h3>
+            <p><strong>The system passes validation when:</strong></p>
+            <ul>
+                <li>✅ All calculations match manual verification exactly</li>
+                <li>✅ Charts display correct data with proper labels</li>
+                <li>✅ AI summaries match chart data precisely</li>
+                <li>✅ Error handling provides clear, actionable messages</li>
+                <li>✅ No user complaints about data accuracy</li>
+            </ul>
+            <p><em>This ensures 100% reliability and user confidence in the system.</em></p>
+        </div>
+    </div>
+</body>
+</html> 

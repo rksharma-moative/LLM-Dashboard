@@ -3054,113 +3054,347 @@ class CSVDashboard {
 
     async processAdvancedQuery(queryStructure, originalQuery) {
         try {
-            const { dataTransformation, chartType, targetColumns } = queryStructure;
+            console.log('🔍 Processing advanced query:', originalQuery);
+            console.log('📋 Query structure:', queryStructure);
+            
+            const { dataTransformation, visualization } = queryStructure;
             let processedData = [...this.csvData];
             
-            // Extract day of week if needed
+            // Validate we have data
+            if (!processedData || processedData.length === 0) {
+                throw new Error('No data available for processing');
+            }
+            
+            const availableColumns = Object.keys(processedData[0]);
+            console.log('📊 Available columns:', availableColumns);
+            
+            // Data validation and column mapping
+            const columnMapping = {};
+            
+            // Step 1: Extract day of week if needed
             if (dataTransformation.extractDayOfWeek) {
-                const dateColumn = dataTransformation.extractDayOfWeek;
-                processedData = processedData.map(row => {
-                    const dateValue = row[dateColumn];
-                    if (dateValue) {
-                        const date = new Date(dateValue);
-                        if (!isNaN(date.getTime())) {
-                            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                            row.day_of_week = dayNames[date.getDay()];
-                        }
-                    }
-                    return row;
-                });
-            }
-            
-            // Calculate rates if needed
-            if (dataTransformation.calculateRate) {
-                const { numerator, denominator } = dataTransformation.calculateRate;
-                processedData = processedData.map(row => {
-                    const num = parseFloat(row[numerator]) || 0;
-                    const den = parseFloat(row[denominator]) || 1;
-                    row.calculated_rate = den > 0 ? (num / den * 100) : 0;
-                    return row;
-                });
-            }
-            
-            // Group by specified column
-            if (queryStructure.groupByColumn) {
-                const groupBy = queryStructure.groupByColumn;
-                const groups = {};
+                const dateColumnName = dataTransformation.extractDayOfWeek;
+                console.log('📅 Extracting day of week from:', dateColumnName);
                 
-                processedData.forEach(row => {
-                    const key = row[groupBy] || row.day_of_week || 'Unknown';
-                    if (!groups[key]) {
-                        groups[key] = [];
-                    }
-                    groups[key].push(row);
-                });
+                // Find the actual date column with flexible matching
+                let actualDateColumn = availableColumns.find(col => 
+                    col.toLowerCase() === dateColumnName.toLowerCase()
+                );
                 
-                // Calculate aggregated values for each group
-                const aggregatedData = Object.entries(groups).map(([key, rows]) => {
-                    const result = { [groupBy]: key };
-                    
-                    if (dataTransformation.calculateRate) {
-                        // Calculate average rate for the group
-                        const rates = rows.map(row => row.calculated_rate || 0);
-                        result.rate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
-                    } else if (targetColumns && targetColumns.length > 1) {
-                        // Calculate average of target column
-                        const values = rows.map(row => parseFloat(row[targetColumns[1]]) || 0);
-                        result[targetColumns[1]] = values.reduce((sum, val) => sum + val, 0) / values.length;
-                    } else {
-                        // Just count
-                        result.count = rows.length;
-                    }
-                    
-                    return result;
-                });
+                if (!actualDateColumn) {
+                    actualDateColumn = availableColumns.find(col => 
+                        col.toLowerCase().includes(dateColumnName.toLowerCase()) ||
+                        dateColumnName.toLowerCase().includes(col.toLowerCase())
+                    );
+                }
                 
-                // Sort if specified
-                if (dataTransformation.sortBy && dataTransformation.sortOrder) {
-                    const sortKey = dataTransformation.sortBy === 'rate' ? 'rate' : 
-                                   dataTransformation.sortBy === 'count' ? 'count' : 
-                                   targetColumns?.[1] || 'count';
-                    
-                    aggregatedData.sort((a, b) => {
-                        const aVal = a[sortKey] || 0;
-                        const bVal = b[sortKey] || 0;
-                        return dataTransformation.sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+                if (!actualDateColumn) {
+                    // Try to find any date-like column
+                    actualDateColumn = availableColumns.find(col => {
+                        const sampleValue = processedData[0][col];
+                        return sampleValue && !isNaN(Date.parse(sampleValue));
                     });
                 }
                 
-                // Limit results if specified
-                if (dataTransformation.limit) {
-                    aggregatedData.splice(parseInt(dataTransformation.limit));
+                if (actualDateColumn) {
+                    console.log('✅ Using date column:', actualDateColumn);
+                    columnMapping.dateColumn = actualDateColumn;
+                    
+                    let validDates = 0;
+                    processedData = processedData.map(row => {
+                        const dateValue = row[actualDateColumn];
+                        if (dateValue) {
+                            const date = new Date(dateValue);
+                            if (!isNaN(date.getTime())) {
+                                const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                                row.day_of_week = dayNames[date.getDay()];
+                                validDates++;
+                            } else {
+                                row.day_of_week = 'Invalid Date';
+                            }
+                        } else {
+                            row.day_of_week = 'No Date';
+                        }
+                        return row;
+                    });
+                    
+                    console.log(`✅ Day of week extraction completed. Valid dates: ${validDates}/${processedData.length}`);
+                } else {
+                    console.error('❌ No suitable date column found');
+                    throw new Error('Date column not found for day of week extraction');
+                }
+            }
+            
+            // Step 2: Identify and validate columns for rate calculation
+            let numeratorColumn = null;
+            let denominatorColumn = null;
+            
+            if (dataTransformation.calculateRate) {
+                const { numerator, denominator } = dataTransformation.calculateRate;
+                console.log('🧮 Setting up rate calculation:', { numerator, denominator });
+                
+                // Find numerator column with flexible matching
+                numeratorColumn = availableColumns.find(col => 
+                    col.toLowerCase() === numerator.toLowerCase()
+                );
+                
+                if (!numeratorColumn) {
+                    numeratorColumn = availableColumns.find(col => 
+                        col.toLowerCase().includes(numerator.toLowerCase()) ||
+                        numerator.toLowerCase().includes(col.toLowerCase())
+                    );
                 }
                 
-                return {
-                    type: queryStructure.queryType,
-                    data: aggregatedData,
-                    chartType: chartType || 'bar',
-                    summary: `Processed ${aggregatedData.length} groups from ${processedData.length} records`,
-                    queryStructure: queryStructure
+                // Find denominator column with flexible matching
+                denominatorColumn = availableColumns.find(col => 
+                    col.toLowerCase() === denominator.toLowerCase()
+                );
+                
+                if (!denominatorColumn) {
+                    denominatorColumn = availableColumns.find(col => 
+                        col.toLowerCase().includes(denominator.toLowerCase()) ||
+                        denominator.toLowerCase().includes(col.toLowerCase())
+                    );
+                }
+                
+                console.log('🔍 Rate calculation columns found:', { numeratorColumn, denominatorColumn });
+                
+                if (!numeratorColumn || !denominatorColumn) {
+                    console.warn('⚠️ Rate calculation columns not found, trying common patterns');
+                    
+                    // Fallback to common email marketing patterns
+                    if (!numeratorColumn) {
+                        numeratorColumn = availableColumns.find(col => 
+                            col.toLowerCase().includes('open') || 
+                            col.toLowerCase().includes('click') ||
+                            col.toLowerCase().includes('response')
+                        );
+                    }
+                    
+                    if (!denominatorColumn) {
+                        denominatorColumn = availableColumns.find(col => 
+                            col.toLowerCase().includes('sent') || 
+                            col.toLowerCase().includes('email') ||
+                            col.toLowerCase().includes('total') ||
+                            col.toLowerCase().includes('deliver')
+                        );
+                    }
+                }
+                
+                if (!numeratorColumn || !denominatorColumn) {
+                    console.error('❌ Cannot find columns for rate calculation');
+                    throw new Error(`Rate calculation failed: numerator '${numerator}' or denominator '${denominator}' column not found`);
+                }
+                
+                // Validate that columns contain numeric data
+                const numeratorSample = processedData.slice(0, 10).map(row => parseFloat(row[numeratorColumn])).filter(val => !isNaN(val));
+                const denominatorSample = processedData.slice(0, 10).map(row => parseFloat(row[denominatorColumn])).filter(val => !isNaN(val));
+                
+                if (numeratorSample.length === 0 || denominatorSample.length === 0) {
+                    throw new Error('Rate calculation columns do not contain valid numeric data');
+                }
+                
+                columnMapping.numeratorColumn = numeratorColumn;
+                columnMapping.denominatorColumn = denominatorColumn;
+                console.log('✅ Rate calculation columns validated:', columnMapping);
+            }
+            
+            // Step 3: Determine grouping column
+            let groupingColumn = null;
+            const groupByField = dataTransformation.groupByColumn;
+            
+            if (groupByField === 'day_of_week' || groupByField.includes('day')) {
+                groupingColumn = 'day_of_week';
+                console.log('📅 Grouping by day of week');
+            } else {
+                // Find the actual grouping column
+                groupingColumn = availableColumns.find(col => 
+                    col.toLowerCase() === groupByField.toLowerCase()
+                );
+                
+                if (!groupingColumn) {
+                    groupingColumn = availableColumns.find(col => 
+                        col.toLowerCase().includes(groupByField.toLowerCase()) ||
+                        groupByField.toLowerCase().includes(col.toLowerCase())
+                    );
+                }
+                
+                if (!groupingColumn) {
+                    // Fallback to first non-numeric column
+                    groupingColumn = availableColumns.find(col => {
+                        const sampleValue = processedData[0][col];
+                        return isNaN(parseFloat(sampleValue));
+                    }) || availableColumns[0];
+                }
+                
+                console.log('📊 Grouping by column:', groupingColumn);
+            }
+            
+            columnMapping.groupingColumn = groupingColumn;
+            
+            // Step 4: Group data and calculate aggregations
+            const groups = {};
+            let validRecords = 0;
+            
+            processedData.forEach((row, index) => {
+                let key;
+                
+                if (groupingColumn === 'day_of_week') {
+                    key = row.day_of_week;
+                } else {
+                    key = row[groupingColumn];
+                }
+                
+                // Skip invalid keys
+                if (!key || key === 'Invalid Date' || key === 'No Date' || key === null || key === undefined) {
+                    return;
+                }
+                
+                if (!groups[key]) {
+                    groups[key] = [];
+                }
+                groups[key].push(row);
+                validRecords++;
+            });
+            
+            console.log(`📊 Grouped ${validRecords} records into ${Object.keys(groups).length} groups:`, Object.keys(groups));
+            
+            if (Object.keys(groups).length === 0) {
+                throw new Error('No valid groups created from data');
+            }
+            
+            // Step 5: Calculate aggregated values for each group
+            const aggregatedData = Object.entries(groups).map(([key, rows]) => {
+                const result = { 
+                    [groupingColumn]: key,
+                    group_name: key,
+                    count: rows.length
                 };
+                
+                if (dataTransformation.calculateRate && numeratorColumn && denominatorColumn) {
+                    // Calculate rate: sum of numerators / sum of denominators * 100
+                    const totalNumerator = rows.reduce((sum, row) => {
+                        const val = parseFloat(row[numeratorColumn]) || 0;
+                        return sum + val;
+                    }, 0);
+                    
+                    const totalDenominator = rows.reduce((sum, row) => {
+                        const val = parseFloat(row[denominatorColumn]) || 0;
+                        return sum + val;
+                    }, 0);
+                    
+                    result.rate = totalDenominator > 0 ? (totalNumerator / totalDenominator * 100) : 0;
+                    result.total_numerator = totalNumerator;
+                    result.total_denominator = totalDenominator;
+                    
+                    console.log(`📊 ${key}: ${totalNumerator}/${totalDenominator} = ${result.rate.toFixed(2)}%`);
+                    
+                } else if (dataTransformation.aggregationType === 'average') {
+                    // Calculate average of numeric columns
+                    const numericCols = availableColumns.filter(col => {
+                        const sampleValue = rows[0][col];
+                        return !isNaN(parseFloat(sampleValue));
+                    });
+                    
+                    if (numericCols.length > 0) {
+                        const targetCol = numericCols[0]; // Use first numeric column
+                        const values = rows.map(row => parseFloat(row[targetCol]) || 0);
+                        result.value = values.reduce((sum, val) => sum + val, 0) / values.length;
+                        result.target_column = targetCol;
+                    }
+                    
+                } else if (dataTransformation.aggregationType === 'sum') {
+                    // Calculate sum of numeric columns
+                    const numericCols = availableColumns.filter(col => {
+                        const sampleValue = rows[0][col];
+                        return !isNaN(parseFloat(sampleValue));
+                    });
+                    
+                    if (numericCols.length > 0) {
+                        const targetCol = numericCols[0]; // Use first numeric column
+                        const values = rows.map(row => parseFloat(row[targetCol]) || 0);
+                        result.value = values.reduce((sum, val) => sum + val, 0);
+                        result.target_column = targetCol;
+                    }
+                }
+                
+                return result;
+            });
+            
+            // Step 6: Sort the results
+            const sortBy = dataTransformation.sortBy || 'rate';
+            const sortOrder = dataTransformation.sortOrder || 'desc';
+            
+            aggregatedData.sort((a, b) => {
+                let aVal, bVal;
+                
+                if (sortBy === 'rate' && a.rate !== undefined) {
+                    aVal = a.rate;
+                    bVal = b.rate;
+                } else if (sortBy === 'value' && a.value !== undefined) {
+                    aVal = a.value;
+                    bVal = b.value;
+                } else {
+                    aVal = a.count;
+                    bVal = b.count;
+                }
+                
+                return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+            });
+            
+            // Step 7: Limit results if specified
+            if (dataTransformation.limit && dataTransformation.limit > 0) {
+                aggregatedData.splice(parseInt(dataTransformation.limit));
+            }
+            
+            console.log('✅ Final aggregated data:', aggregatedData);
+            
+            // Step 8: Create meaningful summary
+            let summary = `Analyzed ${processedData.length} records grouped by ${groupingColumn}`;
+            if (dataTransformation.calculateRate && aggregatedData.length > 0) {
+                const topResult = aggregatedData[0];
+                summary = `${topResult.group_name} has the highest rate at ${topResult.rate.toFixed(2)}% (${topResult.total_numerator}/${topResult.total_denominator})`;
+            } else if (aggregatedData.length > 0) {
+                const topResult = aggregatedData[0];
+                summary = `${topResult.group_name} has the highest value with ${topResult.value || topResult.count}`;
             }
             
             return {
                 type: queryStructure.queryType,
-                data: processedData.slice(0, 50),
-                chartType: chartType || 'bar',
-                summary: `Processed ${processedData.length} records`,
-                queryStructure: queryStructure
+                data: aggregatedData,
+                chartType: visualization.chartType || 'bar',
+                summary: summary,
+                queryStructure: {
+                    ...queryStructure,
+                    xAxisLabel: visualization.xAxisLabel,
+                    yAxisLabel: visualization.yAxisLabel,
+                    chartTitle: visualization.chartTitle
+                },
+                processingDetails: {
+                    originalRecords: processedData.length,
+                    validRecords: validRecords,
+                    groupsCreated: aggregatedData.length,
+                    columnMapping: columnMapping,
+                    calculationType: dataTransformation.aggregationType || 'rate'
+                }
             };
             
         } catch (error) {
-            console.error('Error in advanced query processing:', error);
+            console.error('❌ Error in advanced query processing:', error);
+            
+            // Provide detailed error information
             return {
-                type: 'filter',
-                data: this.csvData.slice(0, 20),
+                type: 'error',
+                data: [],
                 chartType: 'bar',
-                summary: `Error processing advanced query: ${error.message}`,
+                summary: `Processing failed: ${error.message}`,
                 error: error.message,
-                queryStructure: queryStructure
+                queryStructure: queryStructure,
+                processingDetails: {
+                    errorType: error.name,
+                    errorMessage: error.message,
+                    availableColumns: this.csvData.length > 0 ? Object.keys(this.csvData[0]) : []
+                }
             };
         }
     }
