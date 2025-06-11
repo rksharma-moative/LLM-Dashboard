@@ -74,6 +74,19 @@ class CSVDashboard {
         return this.cache.get(key);
     }
 
+    // Clear cache method for fresh suggestions
+    clearSuggestionCache() {
+        // Clear all suggestion-related cache entries
+        const keysToDelete = [];
+        for (const key of this.cache.keys()) {
+            if (key.includes('generateSuggestions')) {
+                keysToDelete.push(key);
+            }
+        }
+        keysToDelete.forEach(key => this.cache.delete(key));
+        console.log('Suggestion cache cleared for fresh results');
+    }
+
     // Debounce function for performance
     debounce(key, func, delay = 300) {
         if (this.debounceTimers.has(key)) {
@@ -916,43 +929,46 @@ class CSVDashboard {
             interestingSuggestions.push(`Show sankey diagram flow between ${categoricalColumns[0]} and ${categoricalColumns[1]}`);
         }
         
-        // Enhanced traditional suggestions with better descriptions
+        // Enhanced visualization-focused suggestions
         if (numericColumns.length > 0) {
-            interestingSuggestions.push(`What is the distribution pattern of ${numericColumns[0]}? Show me a histogram with statistical insights`);
-            interestingSuggestions.push(`Find outliers and anomalies in ${numericColumns[0]} data`);
-            interestingSuggestions.push(`Show top 10 highest ${numericColumns[0]} values with detailed breakdown`);
+            interestingSuggestions.push(`Create histogram showing distribution pattern of ${numericColumns[0]} with statistical insights`);
+            interestingSuggestions.push(`Show bar chart of top 10 highest ${numericColumns[0]} values`);
+            interestingSuggestions.push(`Generate box plot to find outliers and anomalies in ${numericColumns[0]} data`);
         }
         
         if (categoricalColumns.length > 0) {
-            interestingSuggestions.push(`Create an interactive pie chart breakdown of ${categoricalColumns[0]} categories`);
+            interestingSuggestions.push(`Create interactive pie chart breakdown of ${categoricalColumns[0]} categories`);
             interestingSuggestions.push(`Show percentage distribution of ${categoricalColumns[0]} with modern donut chart`);
+            interestingSuggestions.push(`Generate horizontal bar chart ranking ${categoricalColumns[0]} by frequency`);
         }
         
         if (numericColumns.length >= 2) {
-            interestingSuggestions.push(`Analyze correlation strength between ${numericColumns[0]} and ${numericColumns[1]} with scatter plot`);
-            interestingSuggestions.push(`Create density plot showing relationship between ${numericColumns[0]} and ${numericColumns[1]}`);
+            interestingSuggestions.push(`Create scatter plot showing correlation between ${numericColumns[0]} and ${numericColumns[1]}`);
+            interestingSuggestions.push(`Generate bubble chart with ${numericColumns[0]} vs ${numericColumns[1]} relationship`);
+            interestingSuggestions.push(`Show dual-axis line chart comparing ${numericColumns[0]} and ${numericColumns[1]} trends`);
         }
         
-        // Data insights and patterns
-        interestingSuggestions.push(`Show me the most interesting patterns and insights in this dataset`);
-        interestingSuggestions.push(`Create a comprehensive dashboard view of key metrics`);
-        interestingSuggestions.push(`Find and visualize the strongest relationships in the data`);
+        // Visual insights and patterns
+        interestingSuggestions.push(`Create comprehensive chart dashboard showing key visual insights`);
+        interestingSuggestions.push(`Generate multi-chart analysis revealing the strongest data patterns`);
+        interestingSuggestions.push(`Show interactive visualization highlighting the most important relationships`);
         
         // Performance and comparison analysis
         if (categoricalColumns.length >= 1 && numericColumns.length >= 1) {
-            interestingSuggestions.push(`Compare performance metrics across ${categoricalColumns[0]} using multi-series bar chart`);
-            interestingSuggestions.push(`Show ranking analysis of ${categoricalColumns[0]} by ${numericColumns[0]} with horizontal bar chart`);
+            interestingSuggestions.push(`Create multi-series bar chart comparing ${numericColumns[0]} across ${categoricalColumns[0]}`);
+            interestingSuggestions.push(`Generate horizontal bar chart ranking ${categoricalColumns[0]} by ${numericColumns[0]} values`);
+            interestingSuggestions.push(`Show stacked bar chart breaking down ${numericColumns[0]} by ${categoricalColumns[0]} categories`);
         }
         
         // Ensure we have at least 8-10 suggestions
         if (interestingSuggestions.length < 8) {
             const additionalSuggestions = [
-                `Create an advanced statistical summary with box plots`,
-                `Show data quality analysis with missing value patterns`,
-                `Generate predictive insights and trend forecasting`,
-                `Create interactive filter dashboard for data exploration`,
-                `Show comparative analysis with benchmark indicators`,
-                `Generate automated insights with AI-powered recommendations`
+                `Create advanced box plot analysis showing statistical distributions`,
+                `Generate radar chart for multi-dimensional data comparison`,
+                `Show area chart with trend forecasting and patterns`,
+                `Create interactive multi-chart dashboard for data exploration`,
+                `Generate comparative bar chart analysis with benchmark indicators`,
+                `Show heatmap visualization revealing data correlations and patterns`
             ];
             
             additionalSuggestions.forEach(suggestion => {
@@ -984,6 +1000,148 @@ class CSVDashboard {
         }
         
         this.displaySuggestions(interestingSuggestions.slice(0, 10));
+    }
+
+    // Enhanced method for generating data-aware, business-focused fallback suggestions
+    generateDataAwareFallbacks(data) {
+        if (!data || data.length === 0) return [];
+        
+        const columns = Object.keys(data[0]);
+        const suggestions = [];
+        
+        // Perform comprehensive data analysis
+        const analysis = this.analyzeDataForBusinessSuggestions(data, columns);
+        
+        // Priority 1: Performance & Ranking Queries (High Business Value)
+        if (analysis.numericColumns.length > 0 && analysis.categoricalColumns.length > 0) {
+            const numCol = analysis.numericColumns[0];
+            const catCol = analysis.categoricalColumns[0];
+            
+            suggestions.push(`Which ${catCol} has the highest ${numCol} performance?`);
+            suggestions.push(`Show top 10 ${catCol} ranked by ${numCol} values`);
+            suggestions.push(`Create performance comparison chart of ${numCol} across all ${catCol}`);
+            
+            // Add financial/business context if detected
+            if (analysis.hasFinancialData) {
+                suggestions.push(`Compare revenue performance across different ${catCol} categories`);
+            }
+            if (analysis.hasPerformanceData) {
+                suggestions.push(`Show performance ranking analysis by ${catCol} with ${numCol} metrics`);
+            }
+        }
+        
+        // Priority 2: Distribution & Pattern Analysis
+        if (analysis.numericColumns.length > 0) {
+            const numCol = analysis.numericColumns[0];
+            suggestions.push(`Show distribution pattern of ${numCol} with detailed histogram analysis`);
+            suggestions.push(`Find outliers and anomalies in ${numCol} data using statistical visualization`);
+            
+            if (analysis.numericColumns.length > 1) {
+                const numCol2 = analysis.numericColumns[1];
+                suggestions.push(`What's the correlation between ${numCol} and ${numCol2}?`);
+                suggestions.push(`Create scatter plot showing ${numCol} vs ${numCol2} relationship patterns`);
+            }
+        }
+        
+        // Priority 3: Composition & Breakdown Analysis
+        if (analysis.categoricalColumns.length > 0) {
+            const catCol = analysis.categoricalColumns[0];
+            suggestions.push(`Show percentage breakdown of ${catCol} categories with interactive pie chart`);
+            suggestions.push(`What's the composition distribution of ${catCol} in the dataset?`);
+            
+            if (analysis.categoricalColumns.length > 1) {
+                const catCol2 = analysis.categoricalColumns[1];
+                suggestions.push(`Compare distribution patterns between ${catCol} and ${catCol2} categories`);
+            }
+        }
+        
+        // Priority 4: Time-based Analysis (if applicable)
+        if (analysis.dateColumns.length > 0 && analysis.numericColumns.length > 0) {
+            const dateCol = analysis.dateColumns[0];
+            const numCol = analysis.numericColumns[0];
+            suggestions.push(`Show ${numCol} trend over ${dateCol} with comprehensive line chart`);
+            suggestions.push(`How has ${numCol} performance changed over time in ${dateCol}?`);
+        }
+        
+        // Priority 5: Advanced Business Insights
+        if (suggestions.length < 8) {
+            if (analysis.hasBusinessMetrics) {
+                suggestions.push(`Create executive dashboard showing key business performance indicators`);
+                suggestions.push(`Show comprehensive business metrics analysis with multiple chart views`);
+            } else {
+                suggestions.push(`Generate multi-dimensional analysis revealing key data patterns`);
+                suggestions.push(`Create comprehensive visualization dashboard of important insights`);
+            }
+            
+            suggestions.push(`Show the most significant relationships and trends in this dataset`);
+            suggestions.push(`Generate actionable insights visualization for decision-making`);
+        }
+        
+        return suggestions.slice(0, 10);
+    }
+
+    // New method for business-focused data analysis
+    analyzeDataForBusinessSuggestions(data, columns) {
+        const analysis = {
+            numericColumns: [],
+            categoricalColumns: [],
+            dateColumns: [],
+            hasFinancialData: false,
+            hasPerformanceData: false,
+            hasBusinessMetrics: false,
+            businessContext: []
+        };
+        
+        columns.forEach(col => {
+            const values = data.slice(0, 50).map(row => row[col]).filter(val => val !== null && val !== undefined && val !== '');
+            const uniqueValues = [...new Set(values)];
+            const numericValues = values.filter(val => !isNaN(parseFloat(val)) && isFinite(val));
+            const lowerCol = col.toLowerCase();
+            
+            // Classify column types with business context
+            if (numericValues.length > values.length * 0.7) {
+                analysis.numericColumns.push(col);
+                
+                // Detect business-relevant numeric data
+                if (lowerCol.includes('price') || lowerCol.includes('cost') || lowerCol.includes('revenue') || 
+                    lowerCol.includes('sales') || lowerCol.includes('amount') || lowerCol.includes('value') ||
+                    lowerCol.includes('profit') || lowerCol.includes('income')) {
+                    analysis.hasFinancialData = true;
+                    analysis.businessContext.push(`${col}: Financial metric`);
+                } else if (lowerCol.includes('score') || lowerCol.includes('rating') || lowerCol.includes('performance') ||
+                          lowerCol.includes('efficiency') || lowerCol.includes('quality')) {
+                    analysis.hasPerformanceData = true;
+                    analysis.businessContext.push(`${col}: Performance indicator`);
+                } else if (lowerCol.includes('count') || lowerCol.includes('quantity') || lowerCol.includes('number') ||
+                          lowerCol.includes('volume') || lowerCol.includes('units')) {
+                    analysis.businessContext.push(`${col}: Quantity measure`);
+                }
+            } else if (uniqueValues.length < values.length * 0.5 && uniqueValues.length > 1 && uniqueValues.length < 25) {
+                analysis.categoricalColumns.push(col);
+                
+                // Detect business-relevant categorical data
+                if (lowerCol.includes('department') || lowerCol.includes('category') || lowerCol.includes('type') || 
+                    lowerCol.includes('group') || lowerCol.includes('class') || lowerCol.includes('segment')) {
+                    analysis.businessContext.push(`${col}: Business classification`);
+                } else if (lowerCol.includes('status') || lowerCol.includes('state') || lowerCol.includes('condition') ||
+                          lowerCol.includes('stage') || lowerCol.includes('phase')) {
+                    analysis.businessContext.push(`${col}: Status indicator`);
+                } else if (lowerCol.includes('region') || lowerCol.includes('location') || lowerCol.includes('area') ||
+                          lowerCol.includes('territory') || lowerCol.includes('zone')) {
+                    analysis.businessContext.push(`${col}: Geographic dimension`);
+                }
+            } else if (lowerCol.includes('date') || lowerCol.includes('time') || lowerCol.includes('year') || 
+                      lowerCol.includes('month') || lowerCol.includes('day') || lowerCol.includes('period')) {
+                analysis.dateColumns.push(col);
+                analysis.businessContext.push(`${col}: Time dimension`);
+            }
+        });
+        
+        // Determine if we have business metrics
+        analysis.hasBusinessMetrics = analysis.hasFinancialData || analysis.hasPerformanceData || 
+                                     (analysis.numericColumns.length > 0 && analysis.categoricalColumns.length > 0);
+        
+        return analysis;
     }
     
     // Enhanced file info display with accurate statistics
@@ -1155,7 +1313,10 @@ class CSVDashboard {
     async generateSuggestions() {
         if (!this.csvData) return;
         
-        // Check cache first
+        // Clear old suggestion cache to ensure fresh, improved suggestions
+        this.clearSuggestionCache();
+        
+        // Check cache first (will be empty after clearing, but keeping for future calls)
         const cacheKey = this.getCacheKey('generateSuggestions', this.csvData.slice(0, 10));
         const cachedSuggestions = this.getCache(cacheKey);
         
@@ -1170,8 +1331,9 @@ class CSVDashboard {
             const aiService = await this.waitForAIService();
             
             if (!aiService || !aiService.hasValidApiKey()) {
-                console.log('No API key configured, using fallback suggestions');
-                this.displayFallbackSuggestions();
+                console.log('No API key configured, using enhanced data-aware fallback suggestions');
+                const dataAwareSuggestions = this.generateDataAwareFallbacks(this.csvData);
+                this.displaySuggestions(dataAwareSuggestions);
                 return;
             }
             
@@ -1187,12 +1349,14 @@ class CSVDashboard {
                 this.setCache(cacheKey, result.suggestions);
                 this.displaySuggestions(result.suggestions);
             } else {
-                console.log('AI suggestions failed, using fallback');
-                this.displayFallbackSuggestions();
+                console.log('AI suggestions failed, using enhanced data-aware fallback');
+                const dataAwareSuggestions = this.generateDataAwareFallbacks(this.csvData);
+                this.displaySuggestions(dataAwareSuggestions);
             }
         } catch (error) {
             console.error('Error generating suggestions:', error);
-            this.displayFallbackSuggestions();
+            const dataAwareSuggestions = this.generateDataAwareFallbacks(this.csvData);
+            this.displaySuggestions(dataAwareSuggestions);
         } finally {
             this.showLoading(false);
         }
@@ -1488,7 +1652,7 @@ class CSVDashboard {
             type: 'filter',
             data: filteredData.slice(0, 100), // Limit to first 100 results
             columns: columns,
-            chartType: 'table',
+            chartType: 'bar',
             summary: `Filtered data: ${filteredData.length} records match the criteria`
         };
     }
@@ -1743,7 +1907,7 @@ class CSVDashboard {
             
             Original Query: "${query}"
             Query Type: ${queryStructure?.queryType || result.type || 'analysis'}
-            Chart Type: ${result.chartType || 'table'}
+                            Chart Type: ${result.chartType || 'bar'}
             
             Results Summary:
             - Total Records Analyzed: ${Array.isArray(data) ? data.length : 1}
@@ -1968,7 +2132,7 @@ class CSVDashboard {
                     </div>
                     <div class="info-item">
                         <span class="info-label">Chart Type:</span>
-                        <span class="info-value">${result.chartType || 'Table'}</span>
+                        <span class="info-value">${result.chartType || 'Bar Chart'}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Data Points:</span>
@@ -1994,9 +2158,9 @@ class CSVDashboard {
         }
 
         // If chart type is table, hide canvas and show table instead
-        if (result.chartType === 'table' || !result.data || result.data.length === 0) {
+        if (!result.data || result.data.length === 0) {
             canvas.style.display = 'none';
-            container.innerHTML = '<div class="no-chart-message">📊 Switch to Table view to see your data</div>';
+            container.innerHTML = '<div class="no-chart-message">📊 No data available for visualization</div>';
             return;
         }
 
@@ -2679,7 +2843,7 @@ class CSVDashboard {
             let result = {
                 type: queryType,
                 data: [],
-                chartType: chartType || 'table',
+                chartType: chartType || 'bar',
                 summary: '',
                 queryStructure: queryStructure
             };
@@ -2715,7 +2879,7 @@ class CSVDashboard {
                 result = {
                     ...result,
                     ...analysisResult,
-                    chartType: chartType || analysisResult.chartType || 'table',
+                    chartType: chartType || analysisResult.chartType || 'bar',
                     queryStructure: queryStructure
                 };
             } else {
@@ -2723,7 +2887,7 @@ class CSVDashboard {
                 result = {
                     ...result,
                     data: this.csvData.slice(0, 20),
-                    chartType: 'table',
+                    chartType: 'bar',
                     summary: `Could not process "${originalQuery}" - showing sample data instead`,
                     error: 'Analysis failed - check column names and data types'
                 };
@@ -2737,7 +2901,7 @@ class CSVDashboard {
             return {
                 type: 'filter',
                 data: this.csvData.slice(0, 20),
-                chartType: 'table',
+                chartType: 'bar',
                 summary: `Error processing query: ${error.message}`,
                 error: error.message,
                 queryStructure: queryStructure
@@ -2759,7 +2923,7 @@ class CSVDashboard {
         return {
             type: 'filter',
             data: this.csvData.slice(0, 50),
-            chartType: 'table',
+            chartType: 'bar',
             summary: `Showing first 50 records for query: "${query}"`
         };
     }
@@ -2783,7 +2947,7 @@ class CSVDashboard {
                 return {
                     type: 'display',
                     data: this.csvData.slice(0, 20),
-                    chartType: 'table',
+                    chartType: 'bar',
                     summary: `Displaying data for: ${originalQuery}`
                 };
         }
