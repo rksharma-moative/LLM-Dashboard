@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Validation Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .console-output { background: #f5f5f5; padding: 10px; border-radius: 3px; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>CSV Data Validation Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Sample Data (Should show ~10 rows, not 1000)</h2>
+        <p>This test loads the sample employee data and shows the actual count after validation.</p>
+        <button onclick="testSampleData()">Test Sample Data</button>
+        <div id="sample-result" class="console-output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Messy Data with Empty Rows</h2>
+        <p>This test creates data with empty rows and columns to test the cleaning process.</p>
+        <button onclick="testMessyData()">Test Messy Data</button>
+        <div id="messy-result" class="console-output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Data with Duplicates</h2>
+        <p>This test creates data with duplicate rows to test deduplication.</p>
+        <button onclick="testDuplicateData()">Test Duplicate Data</button>
+        <div id="duplicate-result" class="console-output"></div>
+    </div>
+
+    <script>
+        // Mock the dashboard validation method
+        class TestDashboard {
+            validateAndCleanData(rawData, fileName = 'test file') {
+                console.log('Starting data validation for:', fileName);
+                console.log('Raw data received:', rawData?.length || 0, 'rows');
+                
+                if (!rawData || !Array.isArray(rawData)) {
+                    return { isValid: false, message: 'Invalid data format.' };
+                }
+
+                if (rawData.length === 0) {
+                    return { isValid: false, message: 'The CSV file is empty.' };
+                }
+
+                // Step 1: Remove completely empty rows
+                const nonEmptyRows = rawData.filter(row => {
+                    if (!row || typeof row !== 'object') return false;
+                    return Object.values(row).some(value => 
+                        value !== null && 
+                        value !== undefined && 
+                        value.toString().trim() !== ''
+                    );
+                });
+
+                console.log('After removing empty rows:', nonEmptyRows.length, 'rows');
+
+                if (nonEmptyRows.length === 0) {
+                    return { isValid: false, message: 'No valid data rows found in the file.' };
+                }
+
+                // Step 2: Get and validate headers
+                const allHeaders = Object.keys(nonEmptyRows[0] || {});
+                console.log('Original headers:', allHeaders);
+
+                if (allHeaders.length === 0) {
+                    return { isValid: false, message: 'No valid columns found in the file.' };
+                }
+
+                // Step 3: Filter out meaningless columns
+                const validHeaders = allHeaders.filter(header => {
+                    const cleanHeader = header.trim();
+                    
+                    if (!cleanHeader || cleanHeader.match(/^(column|field|unnamed|null|undefined|\d+)$/i)) {
+                        console.log('Removing generic header:', header);
+                        return false;
+                    }
+                    
+                    const nonEmptyValues = nonEmptyRows.filter(row => {
+                        const value = row[header];
+                        return value !== null && 
+                               value !== undefined && 
+                               value.toString().trim() !== '';
+                    });
+                    
+                    const hasEnoughData = nonEmptyValues.length >= Math.max(1, Math.ceil(nonEmptyRows.length * 0.1));
+                    
+                    if (!hasEnoughData) {
+                        console.log('Removing column with insufficient data:', header, 
+                                   `(${nonEmptyValues.length}/${nonEmptyRows.length} non-empty)`);
+                        return false;
+                    }
+                    
+                    return true;
+                });
+
+                console.log('Valid headers after filtering:', validHeaders);
+
+                if (validHeaders.length === 0) {
+                    return { isValid: false, message: 'No columns with sufficient data found.' };
+                }
+
+                // Step 4: Clean and restructure data
+                const cleanedRows = nonEmptyRows.map(row => {
+                    const cleanRow = {};
+                    validHeaders.forEach(header => {
+                        let value = row[header];
+                        if (value !== null && value !== undefined) {
+                            value = value.toString().trim();
+                            cleanRow[header] = value === '' ? null : value;
+                        } else {
+                            cleanRow[header] = null;
+                        }
+                    });
+                    return cleanRow;
+                });
+
+                // Step 5: Quality check
+                const qualityThreshold = Math.ceil(validHeaders.length * 0.2);
+                const meaningfulRows = cleanedRows.filter(row => {
+                    const nonNullValues = Object.values(row).filter(val => val !== null && val !== '');
+                    return nonNullValues.length >= qualityThreshold;
+                });
+
+                console.log('After quality filtering:', meaningfulRows.length, 'rows');
+
+                if (meaningfulRows.length === 0) {
+                    return { isValid: false, message: 'No rows with sufficient data quality found.' };
+                }
+
+                // Step 6: Remove duplicates
+                const uniqueRows = this.removeDuplicateRows(meaningfulRows);
+                console.log('After removing duplicates:', uniqueRows.length, 'rows');
+
+                const removedRows = rawData.length - uniqueRows.length;
+                const removedColumns = allHeaders.length - validHeaders.length;
+
+                let qualityMessage = `Successfully processed ${uniqueRows.length} valid records with ${validHeaders.length} columns.`;
+                
+                if (removedRows > 0 || removedColumns > 0) {
+                    qualityMessage += ` Removed: ${removedRows} low-quality rows`;
+                    if (removedColumns > 0) {
+                        qualityMessage += `, ${removedColumns} empty/invalid columns`;
+                    }
+                    qualityMessage += '.';
+                }
+
+                return {
+                    isValid: true,
+                    data: uniqueRows,
+                    message: qualityMessage,
+                    originalRows: rawData.length,
+                    cleanedRows: uniqueRows.length,
+                    validColumns: validHeaders.length,
+                    removedRows: removedRows,
+                    removedColumns: removedColumns
+                };
+            }
+
+            removeDuplicateRows(rows) {
+                const seen = new Set();
+                return rows.filter(row => {
+                    const rowHash = JSON.stringify(Object.values(row).sort());
+                    if (seen.has(rowHash)) {
+                        return false;
+                    }
+                    seen.add(rowHash);
+                    return true;
+                });
+            }
+        }
+
+        const testDashboard = new TestDashboard();
+
+        function testSampleData() {
+            const sampleData = [
+                {Name: "John Smith", Age: "28", Department: "Engineering", Salary: "75000", Years_Experience: "3", Performance_Score: "8.5"},
+                {Name: "Jane Doe", Age: "32", Department: "Marketing", Salary: "65000", Years_Experience: "5", Performance_Score: "9.2"},
+                {Name: "Mike Johnson", Age: "45", Department: "Engineering", Salary: "95000", Years_Experience: "15", Performance_Score: "7.8"},
+                {Name: "Sarah Wilson", Age: "29", Department: "Sales", Salary: "55000", Years_Experience: "2", Performance_Score: "8.9"},
+                {Name: "David Brown", Age: "38", Department: "Marketing", Salary: "72000", Years_Experience: "8", Performance_Score: "8.1"},
+                {Name: "Lisa Garcia", Age: "33", Department: "Engineering", Salary: "82000", Years_Experience: "7", Performance_Score: "9.0"},
+                {Name: "Tom Davis", Age: "41", Department: "Sales", Salary: "68000", Years_Experience: "12", Performance_Score: "7.5"},
+                {Name: "Emily Rodriguez", Age: "26", Department: "Engineering", Salary: "70000", Years_Experience: "1", Performance_Score: "8.8"},
+                {Name: "Chris Lee", Age: "35", Department: "Marketing", Salary: "69000", Years_Experience: "6", Performance_Score: "8.3"},
+                {Name: "Amy Taylor", Age: "30", Department: "Sales", Salary: "58000", Years_Experience: "4", Performance_Score: "9.1"}
+            ];
+
+            const result = testDashboard.validateAndCleanData(sampleData, 'sample-employee-data.csv');
+            document.getElementById('sample-result').textContent = 
+                `Original rows: ${sampleData.length}\n` +
+                `Final rows: ${result.cleanedRows}\n` +
+                `Message: ${result.message}\n` +
+                `Valid: ${result.isValid}`;
+        }
+
+        function testMessyData() {
+            const messyData = [
+                {Name: "John", Age: "28", Department: "Engineering", "": "", "Unnamed": ""},
+                {Name: "", Age: "", Department: "", "": "", "Unnamed": ""},
+                {Name: "Jane", Age: "32", Department: "", "": "garbage", "Unnamed": ""},
+                {Name: "", Age: "", Department: "", "": "", "Unnamed": ""},
+                {Name: "Mike", Age: "45", Department: "Engineering", "": "", "Unnamed": ""},
+                {Name: "", Age: "", Department: "", "": "", "Unnamed": ""},
+                {Name: "", Age: "", Department: "", "": "", "Unnamed": ""}
+            ];
+
+            const result = testDashboard.validateAndCleanData(messyData, 'messy-data.csv');
+            document.getElementById('messy-result').textContent = 
+                `Original rows: ${messyData.length}\n` +
+                `Final rows: ${result.isValid ? result.cleanedRows : 0}\n` +
+                `Removed rows: ${result.removedRows || 'N/A'}\n` +
+                `Removed columns: ${result.removedColumns || 'N/A'}\n` +
+                `Message: ${result.message}\n` +
+                `Valid: ${result.isValid}`;
+        }
+
+        function testDuplicateData() {
+            const duplicateData = [
+                {Name: "John", Age: "28", Department: "Engineering"},
+                {Name: "Jane", Age: "32", Department: "Marketing"},
+                {Name: "John", Age: "28", Department: "Engineering"}, // Duplicate
+                {Name: "Mike", Age: "45", Department: "Engineering"},
+                {Name: "Jane", Age: "32", Department: "Marketing"}, // Duplicate
+                {Name: "Sarah", Age: "29", Department: "Sales"},
+                {Name: "John", Age: "28", Department: "Engineering"} // Duplicate
+            ];
+
+            const result = testDashboard.validateAndCleanData(duplicateData, 'duplicate-data.csv');
+            document.getElementById('duplicate-result').textContent = 
+                `Original rows: ${duplicateData.length}\n` +
+                `Final rows: ${result.cleanedRows}\n` +
+                `Duplicates removed: ${duplicateData.length - result.cleanedRows}\n` +
+                `Message: ${result.message}\n` +
+                `Valid: ${result.isValid}`;
+        }
+    </script>
+</body>
+</html> 

@@ -1,0 +1,22 @@
+{
+  "name": "per-dash",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "http-server -c-1 -p 8080",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.8"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

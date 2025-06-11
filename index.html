@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM CSV Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard">
+        <header class="dashboard-header">
+            <div class="container">
+                <h1 class="dashboard-title">AI-Powered CSV Data Dashboard</h1>
+                <p class="dashboard-subtitle">Upload your CSV file and ask questions in natural language using AI</p>
+            </div>
+        </header>
+
+        <main class="dashboard-main container">
+            <!-- API Key Configuration Section -->
+            <section class="api-config-section" id="apiConfigSection">
+                <div class="card">
+                    <div class="card__body">
+                        <h3>🔑 AI Configuration</h3>
+                        <p style="margin-bottom: 1rem; color: #666;">
+                            To use AI-powered analysis, you need a Google AI API key. 
+                            <a href="https://ai.google.dev/tutorials/setup" target="_blank" style="color: #007bff;">Get your free API key here</a>
+                        </p>
+                        <div class="form-group">
+                            <label for="apiKeyInput">Google AI API Key:</label>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <input type="password" id="apiKeyInput" class="form-control" 
+                                       placeholder="Enter your Google AI API key..." 
+                                       style="flex: 1;">
+                                <button class="btn btn--primary" id="saveApiKeyBtn">Save Key</button>
+                                <button class="btn btn--secondary" id="testApiKeyBtn" style="display: none;">Test API</button>
+                            </div>
+                        </div>
+                        <div id="apiStatus" style="margin-top: 10px; padding: 8px; border-radius: 4px; display: none;">
+                            <span id="apiStatusText"></span>
+                        </div>
+                        <details style="margin-top: 1rem;">
+                            <summary style="cursor: pointer; color: #007bff;">Instructions for getting an API key</summary>
+                            <div style="margin-top: 0.5rem; padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+                                <ol>
+                                    <li>Visit <a href="https://ai.google.dev/tutorials/setup" target="_blank">Google AI Studio</a></li>
+                                    <li>Sign in with your Google account</li>
+                                    <li>Click "Get API Key" and create a new key</li>
+                                    <li>Copy the key and paste it above</li>
+                                    <li>The key is stored locally in your browser and never sent to our servers</li>
+                                </ol>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </section>
+
+            <!-- File Upload Section -->
+            <section class="upload-section" id="uploadSection">
+                <div class="card upload-card">
+                    <div class="card__body">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">📁</div>
+                            <h3>Upload CSV File</h3>
+                            <p>Drag and drop your CSV file here or click to browse</p>
+                            <input type="file" id="fileInput" accept=".csv" class="file-input">
+                            <button class="btn btn--primary" onclick="document.getElementById('fileInput').click()">
+                                Choose File
+                            </button>
+                        </div>
+                        
+                        <!-- Sample Data Option -->
+                        <div class="sample-data-section">
+                            <p>Or try with sample data:</p>
+                            <button class="btn btn--secondary" id="loadSampleBtn">Load Sample Employee Data</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- File Info Section -->
+            <section class="file-info-section" id="fileInfoSection" style="display: none;">
+                <div class="card">
+                    <div class="card__body">
+                        <h3>File Information</h3>
+                        <div class="file-stats" id="fileStats"></div>
+                        <div class="data-preview" id="dataPreview"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data Analysis Section -->
+            <section class="data-analysis-section" id="dataAnalysisSection" style="display: none;">
+                <!-- Content will be populated by JavaScript -->
+            </section>
+
+            <!-- KPI Section -->
+            <section class="kpi-section" id="kpiSection" style="display: none;">
+                <div class="card">
+                    <div class="card__body">
+                        <h3>📊 Key Performance Indicators</h3>
+                        <div class="kpi-container" id="kpiContainer"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Query Interface -->
+            <section class="query-section" id="querySection" style="display: none;">
+                <div class="query-layout">
+                    <div class="query-panel">
+                        <div class="card">
+                            <div class="card__body">
+                                <h3>Ask a Question</h3>
+                                <div class="form-group">
+                                    <textarea 
+                                        class="form-control query-input" 
+                                        id="queryInput" 
+                                        placeholder="Ask questions like: 'What is the average salary?', 'Show me top 5 performers', 'Group by department'"
+                                        rows="3"
+                                    ></textarea>
+                                </div>
+                                <button class="btn btn--primary btn--full-width" id="analyzeBtn">
+                                    Analyze Data
+                                </button>
+                                
+                                <!-- Updated suggestions section -->
+                                <div class="query-suggestions" id="suggestions">
+                                    <!-- Content will be populated by JavaScript -->
+                                </div>
+
+                                <div class="query-history" id="queryHistory">
+                                    <h4>Query History</h4>
+                                    <div class="history-list" id="historyList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="results-panel">
+                        <div class="card">
+                            <div class="card__body">
+                                <div class="results-tabs">
+                                    <button class="tab-btn active" data-tab="chart">Chart</button>
+                                    <button class="tab-btn" data-tab="table">Table</button>
+                                    <button class="tab-btn" data-tab="summary">Summary</button>
+                                </div>
+
+                                <div class="results-content">
+                                    <!-- Chart View -->
+                                    <div class="tab-content active" id="chartTab">
+                                        <div class="chart-container">
+                                            <canvas id="resultsChart"></canvas>
+                                        </div>
+                                        <div class="chart-info" id="chartInfo"></div>
+                                    </div>
+
+                                    <!-- Table View -->
+                                    <div class="tab-content" id="tableTab">
+                                        <div class="table-controls">
+                                            <input type="text" class="form-control search-input" id="tableSearch" placeholder="Search table...">
+                                            <button class="btn btn--secondary" id="exportBtn">Export CSV</button>
+                                        </div>
+                                        <div class="table-container" id="tableContainer"></div>
+                                        <div class="pagination" id="pagination"></div>
+                                    </div>
+
+                                    <!-- Summary View -->
+                                    <div class="tab-content" id="summaryTab">
+                                        <div class="summary-stats" id="summaryStats"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Loading State -->
+            <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+                <div class="loading-spinner"></div>
+                <p id="loadingText">Processing your query...</p>
+            </div>
+
+            <!-- Message Toast -->
+            <div class="message-toast" id="messageToast" style="display: none;">
+                <span id="messageText"></span>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Global dashboard instance
+        let dashboard;
+    </script>
+    <script src="app.js" type="module"></script>
+</body>
+</html>
