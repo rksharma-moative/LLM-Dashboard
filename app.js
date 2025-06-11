@@ -1717,6 +1717,9 @@ class CSVDashboard {
         console.log('Displaying results:', result);
         this.filteredData = result.data || this.csvData;
         
+        // Store query structure for chart rendering
+        this.currentQueryStructure = result.queryStructure || null;
+        
         // Display AI summary if available
         if (result.aiSummary) {
             this.displayAISummary(result.aiSummary);
@@ -1747,7 +1750,6 @@ class CSVDashboard {
                     <div class="ai-summary-icon">🤖</div>
                     <div class="ai-summary-title">
                         <h4>AI Analysis Summary</h4>
-                        <span class="ai-summary-badge">Powered by Gemini AI</span>
                     </div>
                 </div>
                 <div class="ai-summary-content">
@@ -2223,6 +2225,18 @@ class CSVDashboard {
     }
 
     createBarChart(data, colors) {
+        // Get axis labels from query structure if available
+        let xAxisLabel = 'Category';
+        let yAxisLabel = 'Value';
+        let chartTitle = 'Data Visualization';
+        
+        // Check if we have query structure with proper labels
+        if (this.currentQueryStructure) {
+            xAxisLabel = this.currentQueryStructure.xAxisLabel || xAxisLabel;
+            yAxisLabel = this.currentQueryStructure.yAxisLabel || yAxisLabel;
+            chartTitle = this.currentQueryStructure.chartTitle || chartTitle;
+        }
+
         const labels = data.map(item => {
             // Find the most appropriate label field
             const keys = Object.keys(item);
@@ -2230,7 +2244,10 @@ class CSVDashboard {
                 typeof item[key] === 'string' || 
                 key.toLowerCase().includes('name') || 
                 key.toLowerCase().includes('category') ||
-                key.toLowerCase().includes('group')
+                key.toLowerCase().includes('group') ||
+                key.toLowerCase().includes('day') ||
+                key.toLowerCase().includes('week') ||
+                key.toLowerCase().includes('month')
             ) || keys[0];
             return item[labelKey];
         });
@@ -2250,7 +2267,7 @@ class CSVDashboard {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Values',
+                    label: yAxisLabel,
                     data: values,
                     backgroundColor: colors.map(color => color + '80'), // Add transparency
                     borderColor: colors,
@@ -2263,6 +2280,15 @@ class CSVDashboard {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: 20
+                    },
                     legend: {
                         display: false
                     },
@@ -2273,12 +2299,28 @@ class CSVDashboard {
                         borderColor: 'rgba(255, 255, 255, 0.2)',
                         borderWidth: 1,
                         cornerRadius: 8,
-                        displayColors: false
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                return `${yAxisLabel}: ${context.parsed.y}`;
+                            }
+                        }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: yAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
                             color: 'rgba(0, 0, 0, 0.1)'
                         },
@@ -2287,6 +2329,14 @@ class CSVDashboard {
                         }
                     },
                     x: {
+                        title: {
+                            display: true,
+                            text: xAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
                             display: false
                         },
@@ -2305,12 +2355,27 @@ class CSVDashboard {
     }
 
     createLineChart(data, colors) {
+        // Get axis labels from query structure if available
+        let xAxisLabel = 'Category';
+        let yAxisLabel = 'Value';
+        let chartTitle = 'Trend Analysis';
+        
+        // Check if we have query structure with proper labels
+        if (this.currentQueryStructure) {
+            xAxisLabel = this.currentQueryStructure.xAxisLabel || xAxisLabel;
+            yAxisLabel = this.currentQueryStructure.yAxisLabel || yAxisLabel;
+            chartTitle = this.currentQueryStructure.chartTitle || chartTitle;
+        }
+
         const labels = data.map((item, index) => {
             const keys = Object.keys(item);
             const labelKey = keys.find(key => 
                 typeof item[key] === 'string' || 
                 key.toLowerCase().includes('date') || 
-                key.toLowerCase().includes('time')
+                key.toLowerCase().includes('time') ||
+                key.toLowerCase().includes('day') ||
+                key.toLowerCase().includes('week') ||
+                key.toLowerCase().includes('month')
             ) || index.toString();
             return item[labelKey] || index;
         });
@@ -2329,7 +2394,7 @@ class CSVDashboard {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Trend',
+                    label: yAxisLabel,
                     data: values,
                     borderColor: colors[0],
                     backgroundColor: colors[0] + '20',
@@ -2347,6 +2412,15 @@ class CSVDashboard {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: 20
+                    },
                     legend: {
                         display: false
                     },
@@ -2356,12 +2430,29 @@ class CSVDashboard {
                         bodyColor: 'white',
                         borderColor: 'rgba(255, 255, 255, 0.2)',
                         borderWidth: 1,
-                        cornerRadius: 8
+                        cornerRadius: 8,
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                return `${yAxisLabel}: ${context.parsed.y}`;
+                            }
+                        }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: yAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
                             color: 'rgba(0, 0, 0, 0.1)'
                         },
@@ -2370,32 +2461,59 @@ class CSVDashboard {
                         }
                     },
                     x: {
+                        title: {
+                            display: true,
+                            text: xAxisLabel,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
                         grid: {
-                            display: false
+                            color: 'rgba(0, 0, 0, 0.05)'
                         },
                         ticks: {
-                            color: '#6B7280'
+                            color: '#6B7280',
+                            maxRotation: 45
                         }
                     }
                 },
                 animation: {
                     duration: 1500,
-                    easing: 'easeInOutCubic'
+                    easing: 'easeInOutQuart'
                 }
             }
         };
     }
 
     createPieChart(data, colors) {
+        // Get chart title from query structure if available
+        let chartTitle = 'Distribution';
+        
+        // Check if we have query structure with proper labels
+        if (this.currentQueryStructure) {
+            chartTitle = this.currentQueryStructure.chartTitle || chartTitle;
+        }
+
         const labels = data.map(item => {
             const keys = Object.keys(item);
-            const labelKey = keys.find(key => typeof item[key] === 'string') || keys[0];
+            const labelKey = keys.find(key => 
+                typeof item[key] === 'string' || 
+                key.toLowerCase().includes('name') || 
+                key.toLowerCase().includes('category') ||
+                key.toLowerCase().includes('group') ||
+                key.toLowerCase().includes('day') ||
+                key.toLowerCase().includes('week')
+            ) || keys[0];
             return item[labelKey];
         });
 
         const values = data.map(item => {
             const keys = Object.keys(item);
-            const valueKey = keys.find(key => typeof item[key] === 'number') || keys[1];
+            const valueKey = keys.find(key => 
+                typeof item[key] === 'number' || 
+                !isNaN(parseFloat(item[key]))
+            );
             return parseFloat(item[valueKey]) || 0;
         });
 
@@ -2408,19 +2526,31 @@ class CSVDashboard {
                     backgroundColor: colors,
                     borderColor: '#FFFFFF',
                     borderWidth: 3,
-                    hoverOffset: 10
+                    hoverBorderWidth: 4,
+                    hoverBorderColor: '#FFFFFF'
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: 20
+                    },
                     legend: {
-                        position: 'right',
+                        position: 'bottom',
                         labels: {
                             padding: 20,
                             usePointStyle: true,
-                            color: '#374151'
+                            font: {
+                                size: 12
+                            }
                         }
                     },
                     tooltip: {
@@ -2429,12 +2559,20 @@ class CSVDashboard {
                         bodyColor: 'white',
                         borderColor: 'rgba(255, 255, 255, 0.2)',
                         borderWidth: 1,
-                        cornerRadius: 8
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${context.label}: ${context.parsed} (${percentage}%)`;
+                            }
+                        }
                     }
                 },
                 animation: {
                     animateRotate: true,
-                    duration: 1200
+                    animateScale: true,
+                    duration: 1500
                 }
             }
         };
@@ -2839,6 +2977,11 @@ class CSVDashboard {
         try {
             const { queryType, targetColumns, operation, filterConditions, chartType } = queryStructure;
             
+            // Check if we need advanced data processing
+            if (queryStructure.dataTransformation) {
+                return await this.processAdvancedQuery(queryStructure, originalQuery);
+            }
+            
             // Default result structure
             let result = {
                 type: queryType,
@@ -2903,6 +3046,119 @@ class CSVDashboard {
                 data: this.csvData.slice(0, 20),
                 chartType: 'bar',
                 summary: `Error processing query: ${error.message}`,
+                error: error.message,
+                queryStructure: queryStructure
+            };
+        }
+    }
+
+    async processAdvancedQuery(queryStructure, originalQuery) {
+        try {
+            const { dataTransformation, chartType, targetColumns } = queryStructure;
+            let processedData = [...this.csvData];
+            
+            // Extract day of week if needed
+            if (dataTransformation.extractDayOfWeek) {
+                const dateColumn = dataTransformation.extractDayOfWeek;
+                processedData = processedData.map(row => {
+                    const dateValue = row[dateColumn];
+                    if (dateValue) {
+                        const date = new Date(dateValue);
+                        if (!isNaN(date.getTime())) {
+                            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                            row.day_of_week = dayNames[date.getDay()];
+                        }
+                    }
+                    return row;
+                });
+            }
+            
+            // Calculate rates if needed
+            if (dataTransformation.calculateRate) {
+                const { numerator, denominator } = dataTransformation.calculateRate;
+                processedData = processedData.map(row => {
+                    const num = parseFloat(row[numerator]) || 0;
+                    const den = parseFloat(row[denominator]) || 1;
+                    row.calculated_rate = den > 0 ? (num / den * 100) : 0;
+                    return row;
+                });
+            }
+            
+            // Group by specified column
+            if (queryStructure.groupByColumn) {
+                const groupBy = queryStructure.groupByColumn;
+                const groups = {};
+                
+                processedData.forEach(row => {
+                    const key = row[groupBy] || row.day_of_week || 'Unknown';
+                    if (!groups[key]) {
+                        groups[key] = [];
+                    }
+                    groups[key].push(row);
+                });
+                
+                // Calculate aggregated values for each group
+                const aggregatedData = Object.entries(groups).map(([key, rows]) => {
+                    const result = { [groupBy]: key };
+                    
+                    if (dataTransformation.calculateRate) {
+                        // Calculate average rate for the group
+                        const rates = rows.map(row => row.calculated_rate || 0);
+                        result.rate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+                    } else if (targetColumns && targetColumns.length > 1) {
+                        // Calculate average of target column
+                        const values = rows.map(row => parseFloat(row[targetColumns[1]]) || 0);
+                        result[targetColumns[1]] = values.reduce((sum, val) => sum + val, 0) / values.length;
+                    } else {
+                        // Just count
+                        result.count = rows.length;
+                    }
+                    
+                    return result;
+                });
+                
+                // Sort if specified
+                if (dataTransformation.sortBy && dataTransformation.sortOrder) {
+                    const sortKey = dataTransformation.sortBy === 'rate' ? 'rate' : 
+                                   dataTransformation.sortBy === 'count' ? 'count' : 
+                                   targetColumns?.[1] || 'count';
+                    
+                    aggregatedData.sort((a, b) => {
+                        const aVal = a[sortKey] || 0;
+                        const bVal = b[sortKey] || 0;
+                        return dataTransformation.sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+                    });
+                }
+                
+                // Limit results if specified
+                if (dataTransformation.limit) {
+                    aggregatedData.splice(parseInt(dataTransformation.limit));
+                }
+                
+                return {
+                    type: queryStructure.queryType,
+                    data: aggregatedData,
+                    chartType: chartType || 'bar',
+                    summary: `Processed ${aggregatedData.length} groups from ${processedData.length} records`,
+                    queryStructure: queryStructure
+                };
+            }
+            
+            return {
+                type: queryStructure.queryType,
+                data: processedData.slice(0, 50),
+                chartType: chartType || 'bar',
+                summary: `Processed ${processedData.length} records`,
+                queryStructure: queryStructure
+            };
+            
+        } catch (error) {
+            console.error('Error in advanced query processing:', error);
+            return {
+                type: 'filter',
+                data: this.csvData.slice(0, 20),
+                chartType: 'bar',
+                summary: `Error processing advanced query: ${error.message}`,
                 error: error.message,
                 queryStructure: queryStructure
             };

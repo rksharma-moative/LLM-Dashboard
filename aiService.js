@@ -649,74 +649,94 @@ class AIService {
             const sampleData = data.slice(0, 10);
             
             const prompt = `
-            You are an expert data visualization analyst. Analyze this user query and provide the OPTIMAL visualization strategy with SPECIFIC axis recommendations.
+            You are an expert data analyst and visualization specialist. Analyze this user query and provide PRECISE data processing and visualization instructions.
             
             Dataset Information:
-            - Columns: ${columns.join(', ')}
+            - Available Columns: ${columns.join(', ')}
             - Total rows: ${data.length}
             - Sample data: ${JSON.stringify(sampleData.slice(0, 3), null, 2)}
             
             User Query: "${query}"
             
-            CRITICAL VISUALIZATION REQUIREMENTS:
-            1. Choose the BEST chart type for maximum insight and visual appeal
-            2. Specify EXACTLY what should be on X-axis and Y-axis with proper data values
-            3. Determine optimal data grouping, aggregation, and binning
-            4. Recommend data ranges and scaling for best visual representation
-            5. Suggest meaningful axis labels and chart titles
+            CRITICAL ANALYSIS REQUIREMENTS:
+            1. UNDERSTAND THE QUESTION: What exactly is the user asking for?
+            2. IDENTIFY REQUIRED CALCULATIONS: Does this need rates, percentages, averages, sums, counts?
+            3. DETERMINE GROUPING: What should be grouped by (day of week, category, etc.)?
+            4. SPECIFY EXACT DATA TRANSFORMATION: How should raw data be processed?
+            5. CHOOSE OPTIMAL VISUALIZATION: What chart type best shows the answer?
+            6. SET PRECISE AXIS LABELS: What should X and Y axes represent?
             
-            CHART TYPE GUIDELINES (NEVER suggest table views):
-            - Bar charts: comparing categories/groups (X=categories, Y=values)
-            - Line charts: trends over time/sequence (X=time/sequence, Y=metric)
-            - Scatter plots: correlations between two numeric variables (X=variable1, Y=variable2)
-            - Pie/Donut charts: parts of a whole (percentages/proportions)
-            - Histograms: data distribution (X=value_ranges, Y=frequency/count)
-            - Area charts: cumulative trends or multiple series
-            - Bubble charts: 3-variable relationships (X=var1, Y=var2, size=var3)
-            - Radar charts: multi-dimensional comparisons
+            SPECIAL HANDLING FOR COMMON PATTERNS:
+            - "Day of week" queries: Extract day name from date columns, group by day name
+            - "Rate" calculations: Identify numerator and denominator columns, calculate percentage
+            - "Highest/Lowest" queries: Sort results and show top/bottom values
+            - "Average/Mean" queries: Calculate averages within groups
+            - "Distribution" queries: Show frequency or count distributions
+            - "Trend" queries: Show changes over time periods
             
-            AXIS OPTIMIZATION:
-            - X-axis: independent variable (what you're grouping/measuring by)
-            - Y-axis: dependent variable (what you're measuring/counting)
-            - Use descriptive, business-friendly labels
-            - Consider data ranges and recommend optimal scaling
-            - Suggest number of data points for best readability (e.g., top 10, group small categories)
+            DATA PROCESSING INSTRUCTIONS:
+            - For date columns: Extract relevant time components (day of week, month, etc.)
+            - For rate calculations: Clearly specify formula (e.g., Opened / "No. of emails sent" * 100)
+            - For grouping: Specify exact grouping column and aggregation method
+            - For filtering: Define any necessary data filters
+            
+            VISUALIZATION GUIDELINES:
+            - Bar charts: Comparing categories or groups (X=category, Y=metric)
+            - Line charts: Trends over time (X=time_period, Y=metric)
+            - Pie charts: Parts of whole (percentages/proportions)
+            - Scatter plots: Relationships between two numeric variables
+            - Histograms: Distribution of values
+            
+            AXIS LABELING RULES:
+            - X-axis: The independent variable (what you're grouping by)
+            - Y-axis: The dependent variable (what you're measuring)
+            - Use business-friendly, descriptive labels
+            - Include units where applicable (%, $, count, etc.)
             
             Provide a JSON response with this exact structure:
             {
-                "queryType": "aggregation|filter|groupby|correlation|trend|distribution|comparison",
+                "queryType": "aggregation|groupby|calculation|filter|trend|distribution|comparison",
                 "targetColumns": ["primary_column", "secondary_column"],
-                "operation": "sum|avg|count|max|min|group|filter|compare|trend",
-                "filterConditions": {},
+                "operation": "sum|avg|count|max|min|rate|percentage|group|filter|extract",
+                "calculationFormula": "specific formula if calculation needed (e.g., 'Opened / No. of emails sent * 100')",
+                "groupByColumn": "column to group by (e.g., day_of_week extracted from date)",
+                "dataTransformation": {
+                    "extractDayOfWeek": "date_column_name if needed",
+                    "calculateRate": {
+                        "numerator": "column_name",
+                        "denominator": "column_name"
+                    },
+                    "filterConditions": {},
+                    "sortBy": "column_name",
+                    "sortOrder": "asc|desc",
+                    "limit": "number_of_results"
+                },
                 "chartType": "bar|line|pie|scatter|histogram|area|bubble|radar|doughnut",
-                "xAxisLabel": "Descriptive X-axis label",
-                "yAxisLabel": "Descriptive Y-axis label", 
-                "chartTitle": "Compelling chart title",
-                "expectedResult": "What insights this analysis will reveal",
+                "xAxisLabel": "Descriptive X-axis label with units",
+                "yAxisLabel": "Descriptive Y-axis label with units", 
+                "chartTitle": "Clear, specific chart title answering the question",
+                "expectedDataStructure": [
+                    {
+                        "x_value": "example_x_value",
+                        "y_value": "example_y_value"
+                    }
+                ],
                 "visualization": {
                     "type": "bar|line|pie|scatter|histogram|area|bubble|radar|doughnut",
-                    "xAxis": "column_name",
-                    "yAxis": "column_name_or_calculated_field", 
-                    "groupBy": "column_name_if_applicable",
-                    "dataLimit": "number_of_data_points_to_show",
-                    "sortBy": "how_to_sort_data_for_best_visual",
-                    "reasoning": "Why this chart type and axes were chosen for maximum insight"
+                    "xAxis": "exact_column_or_calculated_field",
+                    "yAxis": "exact_column_or_calculated_field", 
+                    "dataProcessing": "step-by-step data processing instructions",
+                    "reasoning": "Why this visualization and data processing approach"
                 },
-                "chartExplanation": {
-                    "xAxisMeaning": "What the X-axis represents for business users",
-                    "yAxisMeaning": "What the Y-axis represents for business users", 
-                    "dataPointMeaning": "What each bar/point/segment represents",
-                    "howToInterpret": "How to read and understand this chart",
-                    "keyInsights": "What patterns or insights to look for"
-                },
-                "dataOptimization": {
-                    "recommendedLimit": "optimal_number_of_data_points",
-                    "aggregationMethod": "how_to_group_or_aggregate_data",
-                    "filterSuggestion": "any_filters_to_apply_for_cleaner_visualization"
+                "businessInsight": {
+                    "questionAnswered": "Restate what question this analysis answers",
+                    "keyMetric": "The main metric being measured",
+                    "comparisonBasis": "What is being compared (days, categories, etc.)",
+                    "actionableInsight": "What business decision this data supports"
                 }
             }
             
-            Return ONLY valid JSON without any markdown formatting.`;
+            IMPORTANT: Return ONLY valid JSON without any markdown formatting or explanations.`;
 
             const result = await this.model.generateContent(prompt);
             const response = await result.response;
