@@ -686,24 +686,68 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         const analysisSection = document.getElementById('dataAnalysisSection');
         if (!analysisSection) return;
 
+        // Ensure we have analysis content
+        const analysisText = analysis.analysis || this.generateFallbackAnalysis(analysis.columnAnalysis || analysis.detailedColumnAnalysis);
+        const columnAnalysis = analysis.columnAnalysis || analysis.detailedColumnAnalysis || {};
+
         const analysisHtml = `
-            <div class="analysis-container">
-                <h3>📊 Data Structure Analysis</h3>
-                <div class="analysis-content">
-                    <div class="analysis-text">${analysis.analysis.replace(/\n/g, '<br>')}</div>
-                    <div class="column-breakdown">
-                        <h4>Column Breakdown:</h4>
-                        <div class="columns-grid">
-                            ${Object.entries(analysis.columnAnalysis).map(([col, info]) => `
-                                <div class="column-card">
-                                    <div class="column-name">${col}</div>
-                                    <div class="column-type ${info.type}">${info.type}</div>
-                                    <div class="column-stats">
-                                        <span>${info.uniqueCount} unique values</span>
-                                        ${info.hasNulls ? '<span class="has-nulls">Has nulls</span>' : ''}
+            <div class="card">
+                <div class="card__body">
+                    <h3>📊 Data Structure Analysis</h3>
+                    <div class="analysis-content">
+                        <div class="analysis-overview">
+                            <div class="analysis-text">${analysisText.replace(/\n/g, '<br>')}</div>
+                        </div>
+                        
+                        ${Object.keys(columnAnalysis).length > 0 ? `
+                        <div class="column-breakdown">
+                            <h4>📋 Column Details:</h4>
+                            <div class="columns-grid">
+                                ${Object.entries(columnAnalysis).map(([col, info]) => `
+                                    <div class="column-card">
+                                        <div class="column-header">
+                                            <div class="column-name">${col}</div>
+                                            <div class="column-type ${info.type}">${info.type}</div>
+                                        </div>
+                                        <div class="column-stats">
+                                            <div class="stat-row">
+                                                <span class="stat-label">Unique Values:</span>
+                                                <span class="stat-value">${info.uniqueCount || 'N/A'}</span>
+                                            </div>
+                                            ${info.nullPercentage !== undefined ? `
+                                            <div class="stat-row">
+                                                <span class="stat-label">Completeness:</span>
+                                                <span class="stat-value">${(100 - info.nullPercentage).toFixed(1)}%</span>
+                                            </div>
+                                            ` : ''}
+                                            ${info.sampleValues && info.sampleValues.length > 0 ? `
+                                            <div class="stat-row">
+                                                <span class="stat-label">Sample:</span>
+                                                <span class="stat-value">${info.sampleValues.slice(0, 3).join(', ')}</span>
+                                            </div>
+                                            ` : ''}
+                                            ${info.stats && info.stats.mean !== undefined ? `
+                                            <div class="stat-row">
+                                                <span class="stat-label">Average:</span>
+                                                <span class="stat-value">${info.stats.mean.toFixed(2)}</span>
+                                            </div>
+                                            ` : ''}
+                                        </div>
+                                        <div class="column-quality ${info.dataQuality || 'good'}">${info.dataQuality || 'good'} quality</div>
                                     </div>
-                                </div>
-                            `).join('')}
+                                `).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="analysis-insights">
+                            <h4>💡 Key Insights:</h4>
+                            <ul class="insights-list">
+                                <li>Dataset contains ${this.csvData.length.toLocaleString()} records across ${Object.keys(columnAnalysis).length} columns</li>
+                                <li>${Object.values(columnAnalysis).filter(col => col.type === 'numeric').length} numeric columns available for statistical analysis</li>
+                                <li>${Object.values(columnAnalysis).filter(col => col.type === 'categorical').length} categorical columns for grouping and segmentation</li>
+                                <li>Overall data quality: ${this.assessOverallDataQuality(columnAnalysis)}</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -963,8 +1007,12 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         this.showLoading(true, 'Processing your query...');
         
         try {
+            let result = null;
+            let aiSummary = null;
+            
             if (this.aiService.hasValidApiKey()) {
                 // Use AI-powered structured query analysis
+                this.showLoading(true, 'Analyzing query with AI...');
                 const structuredAnalysis = await this.aiService.analyzeQueryWithStructure(this.csvData, query);
                 
                 if (structuredAnalysis.success) {
@@ -972,30 +1020,44 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
                     console.log('AI Query structure:', queryStructure);
                     
                     // Process the query based on the structured analysis
-                    const result = await this.executeStructuredQuery(queryStructure, query);
+                    this.showLoading(true, 'Executing analysis...');
+                    result = await this.executeStructuredQuery(queryStructure, query);
                     
                     if (result) {
                         // Generate AI summary of results
-                        const resultSummary = await this.generateResultSummary(result, query, queryStructure);
-                        result.aiSummary = resultSummary;
-                        
-                        this.displayResults(result, query);
-                        this.updateChart(result, queryStructure);
-                        this.updateQueryHistory();
-                        this.updateKPIs();
-                        return;
+                        this.showLoading(true, 'Generating AI insights...');
+                        aiSummary = await this.generateResultSummary(result, query, queryStructure);
+                        result.aiSummary = aiSummary;
                     }
                 }
             }
             
-            // Fallback to pattern matching (works without API key)
-            console.log('Using pattern matching for query:', query);
-            const result = this.parseQuery(query);
+            // Fallback to pattern matching if AI failed or no API key
+            if (!result) {
+                console.log('Using pattern matching for query:', query);
+                this.showLoading(true, 'Analyzing with pattern matching...');
+                result = this.parseQuery(query);
+                
+                // Generate basic summary even without AI
+                if (result && this.aiService.hasValidApiKey()) {
+                    try {
+                        this.showLoading(true, 'Generating insights...');
+                        aiSummary = await this.generateBasicResultSummary(result, query);
+                        result.aiSummary = aiSummary;
+                    } catch (error) {
+                        console.warn('Failed to generate AI summary:', error);
+                    }
+                }
+            }
+            
             if (result) {
+                // Display results with AI summary
                 this.displayResults(result, query);
-                this.updateChart(result);
+                this.updateChart(result, query);
                 this.updateQueryHistory();
                 this.updateKPIs();
+                
+                this.showMessage('Analysis completed successfully!', 'success');
             } else {
                 this.showMessage('Could not understand your query. Please try rephrasing or use one of the suggested questions.', 'warning');
             }
@@ -1140,143 +1202,9 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         };
     }
 
-    // Intelligent chart type selection
+    // Intelligent chart type selection (alias for compatibility)
     selectIntelligentChartType(result, queryStructure) {
-        // Use AI-suggested chart type if available
-        if (queryStructure?.chartType) {
-            return queryStructure.chartType;
-        }
-        
-        // Fallback to intelligent selection based on data characteristics
-        const data = result.data;
-        if (!data || data.length === 0) return 'bar';
-        
-        const columns = Object.keys(data[0]);
-        const numericColumns = columns.filter(col => 
-            data.some(row => !isNaN(parseFloat(row[col])))
-        );
-        const categoricalColumns = columns.filter(col => 
-            !numericColumns.includes(col)
-        );
-        
-        // Decision logic for chart type
-        if (result.type === 'distribution') {
-            return numericColumns.length > 0 ? 'histogram' : 'bar';
-        } else if (result.type === 'trend') {
-            return 'line';
-        } else if (result.type === 'correlation') {
-            return 'scatter';
-        } else if (result.type === 'groupby' && data.length <= 10) {
-            return 'pie';
-        } else if (result.type === 'groupby') {
-            return 'bar';
-        } else if (numericColumns.length >= 2) {
-            return 'scatter';
-        } else if (categoricalColumns.length > 0 && numericColumns.length > 0) {
-            return 'bar';
-        }
-        
-        return 'bar'; // Default fallback
-    }
-
-    // New method to generate AI summary of results
-    async generateResultSummary(result, query, queryStructure) {
-        try {
-            if (!this.aiService) return "Analysis completed successfully.";
-            
-            const data = result.data;
-            const dataPreview = Array.isArray(data) ? data.slice(0, 5) : data;
-            
-            const summaryPrompt = `
-            Analyze these query results and provide a concise, insightful summary:
-            
-            Original Query: "${query}"
-            Query Type: ${queryStructure?.queryType || 'unknown'}
-            Chart Type: ${result.chartType || 'table'}
-            
-            Results Preview:
-            ${JSON.stringify(dataPreview, null, 2)}
-            
-            Total Records: ${Array.isArray(data) ? data.length : 1}
-            
-            Provide a 2-3 sentence summary that:
-            1. Explains what the analysis found
-            2. Highlights key insights or patterns
-            3. Mentions any notable trends or outliers
-            
-            Keep it concise and business-friendly.`;
-            
-            const summary = await this.aiService.generateResultSummary(summaryPrompt);
-            return summary || "Analysis completed. Review the chart and data for insights.";
-        } catch (error) {
-            console.error('Error generating result summary:', error);
-            return "Analysis completed successfully. Review the results above.";
-        }
-    }
-
-    updateChart(result, queryStructure) {
-        const canvas = document.getElementById('resultsChart');
-        if (!canvas) return;
-
-        // Destroy existing chart
-        if (this.currentChart) {
-            this.currentChart.destroy();
-        }
-
-        try {
-            // Intelligent chart selection
-            const chartConfig = this.getIntelligentChartConfig(result, queryStructure);
-            
-            if (!chartConfig) {
-                console.warn('No suitable chart configuration found');
-                this.showMessage('Unable to generate chart for this data type', 'warning');
-                return;
-            }
-
-            const ctx = canvas.getContext('2d');
-            this.currentChart = new Chart(ctx, chartConfig);
-            
-            // Update chart info
-            this.updateChartInfo(result, queryStructure?.originalQuery || 'Data Analysis');
-            
-        } catch (error) {
-            console.error('Chart generation error:', error);
-            this.showMessage('Error generating chart: ' + error.message, 'error');
-        }
-    }
-    
-    getIntelligentChartConfig(result, queryStructure) {
-        if (!result || !result.data || result.data.length === 0) {
-            return null;
-        }
-
-        // Determine the best chart type based on data characteristics
-        const chartType = this.selectOptimalChartType(result, queryStructure);
-        
-        switch (chartType) {
-            case 'bar':
-                return this.getEnhancedBarConfig(result);
-            case 'line':
-                return this.getEnhancedLineConfig(result);
-            case 'pie':
-                return this.getEnhancedPieConfig(result);
-            case 'doughnut':
-                return this.getEnhancedDoughnutConfig(result);
-            case 'scatter':
-                return this.getEnhancedScatterConfig(result);
-            case 'histogram':
-                return this.getEnhancedHistogramConfig(result);
-            case 'area':
-                return this.getEnhancedAreaConfig(result);
-            case 'radar':
-                return this.getEnhancedRadarConfig(result);
-            case 'polarArea':
-                return this.getEnhancedPolarAreaConfig(result);
-            case 'bubble':
-                return this.getEnhancedBubbleConfig(result);
-            default:
-                return this.getEnhancedBarConfig(result); // Fallback
-        }
+        return this.selectOptimalChartType(result, queryStructure);
     }
 
     // Intelligent chart type selection
@@ -1304,13 +1232,13 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
 
         // Decision tree for chart selection
         if (result.type === 'correlation' && numericColumns.length >= 2) {
-            return data.length > 100 ? 'scatter' : 'bubble';
+            return 'scatter';
         }
         
         if (result.type === 'distribution') {
             return numericColumns.length > 0 ? 'histogram' : 'bar';
         }
-        
+
         if (result.type === 'trend' && dateColumns.length > 0) {
             return 'line';
         }
@@ -1319,15 +1247,9 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
             const uniqueCategories = [...new Set(data.map(row => row[categoricalColumns[0]]))].length;
             if (uniqueCategories <= 6) {
                 return uniqueCategories <= 4 ? 'pie' : 'doughnut';
-            } else if (uniqueCategories <= 12) {
-                return 'bar';
             } else {
-                return 'histogram';
+                return 'bar';
             }
-        }
-        
-        if (numericColumns.length >= 3) {
-            return 'radar';
         }
         
         if (numericColumns.length === 2) {
@@ -1341,71 +1263,94 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         if (dateColumns.length > 0 && numericColumns.length > 0) {
             return 'line';
         }
-        
+
         // Default fallback
         return 'bar';
     }
-
+    
     // Enhanced Bar Chart Configuration
-    getEnhancedBarConfig(result) {
+    getEnhancedBarConfig(result, xAxis = null, yAxis = null) {
         const data = result.data;
+        if (!data || !Array.isArray(data) || data.length === 0) {
+            return null;
+        }
+
         const columns = Object.keys(data[0] || {});
-        
-        // Find the best columns for x and y axes
-        const categoricalCol = this.findBestCategoricalColumn(columns, data);
-        const numericCol = this.findBestNumericColumn(columns, data);
-        
-        if (!categoricalCol && !numericCol) {
+        if (columns.length === 0) {
             return null;
         }
         
-        // Prepare data
+        // Use AI-suggested axes or find the best columns
+        const categoricalCol = xAxis || this.findBestCategoricalColumn(columns, data) || columns[0];
+        const numericCol = yAxis || this.findBestNumericColumn(columns, data);
+        
+        // Prepare data based on suggested or detected columns
         let chartData, labels;
         
-        if (result.type === 'group') {
-            labels = Object.keys(result.groups || {});
-            chartData = labels.map(label => (result.groups[label] || []).length);
+        if (result.type === 'group' || result.type === 'groupby') {
+            if (result.groups) {
+                labels = Object.keys(result.groups);
+                chartData = labels.map(label => (result.groups[label] || []).length);
+            } else {
+                // Fallback: group by first categorical column
+                const grouped = this.groupAndAggregate(data, categoricalCol, numericCol || 'count', 'count');
+                labels = Object.keys(grouped);
+                chartData = Object.values(grouped);
+            }
+        } else if (result.type === 'aggregate' && result.result !== undefined) {
+            // Single aggregate result
+            labels = [result.column || 'Result'];
+            chartData = [result.result];
         } else if (categoricalCol && numericCol) {
             // Group by categorical column and aggregate numeric column
             const grouped = this.groupAndAggregate(data, categoricalCol, numericCol);
-            labels = Object.keys(grouped);
-            chartData = Object.values(grouped);
+            labels = Object.keys(grouped).slice(0, 15); // Limit to 15 categories for readability
+            chartData = labels.map(key => grouped[key]);
         } else if (numericCol) {
             // Create histogram-like bars for numeric data
-            const bins = this.createBins(data, numericCol);
-            labels = bins.map(bin => `${bin.min}-${bin.max}`);
+            const bins = this.createBins(data, numericCol, 8);
+            labels = bins.map(bin => `${bin.min.toFixed(1)}-${bin.max.toFixed(1)}`);
             chartData = bins.map(bin => bin.count);
         } else {
-            // Fallback: count occurrences
-            const counts = this.countOccurrences(data, categoricalCol || columns[0]);
-            labels = Object.keys(counts);
-            chartData = Object.values(counts);
+            // Fallback: count occurrences of first column
+            const counts = this.countOccurrences(data, categoricalCol);
+            const sortedEntries = Object.entries(counts)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 10); // Limit to top 10
+            labels = sortedEntries.map(([key]) => key);
+            chartData = sortedEntries.map(([,value]) => value);
         }
 
-                return {
-                    type: 'bar',
-                    data: {
+        // Ensure we have valid data
+        if (!labels || !chartData || labels.length === 0 || chartData.length === 0) {
+            return null;
+        }
+
+        return {
+            type: 'bar',
+            data: {
                 labels: labels,
-                        datasets: [{
-                    label: numericCol || 'Count',
+                datasets: [{
+                    label: numericCol || result.operation || 'Count',
                     data: chartData,
                     backgroundColor: this.generateColors(labels.length, 0.7),
                     borderColor: this.generateColors(labels.length, 1),
                     borderWidth: 1,
                     borderRadius: 4,
                     borderSkipped: false,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                        text: this.generateChartTitle(result, categoricalCol, numericCol)
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: this.generateChartTitle(result, categoricalCol, numericCol),
+                        font: { size: 16, weight: 'bold' }
                     },
                     legend: {
-                        display: labels.length > 1
+                        display: false
                     },
                     tooltip: {
                         callbacks: {
@@ -1418,225 +1363,92 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
                     }
                 },
                 scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: categoricalCol || 'Categories',
+                            font: { weight: 'bold' }
+                        },
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 0
+                        }
+                    },
                     y: {
+                        title: {
+                            display: true,
+                            text: numericCol || result.operation || 'Count',
+                            font: { weight: 'bold' }
+                        },
                         beginAtZero: true,
                         ticks: {
                             callback: function(value) {
                                 return typeof value === 'number' ? value.toLocaleString() : value;
                             }
                         }
-                    },
-                    x: {
-                        ticks: {
-                            maxRotation: 45,
-                            minRotation: 0
-                        }
-                            }
-                        }
                     }
-                };
-    }
-
-    // Enhanced Line Chart Configuration
-    getEnhancedLineConfig(result) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        
-        const dateCol = this.findBestDateColumn(columns, data);
-        const numericCols = this.findAllNumericColumns(columns, data);
-        
-        if (!dateCol && numericCols.length < 2) {
-            return this.getEnhancedBarConfig(result); // Fallback
-        }
-        
-        let labels, datasets;
-        
-        if (dateCol) {
-            // Time series data
-            const sortedData = [...data].sort((a, b) => new Date(a[dateCol]) - new Date(b[dateCol]));
-            labels = sortedData.map(row => new Date(row[dateCol]).toLocaleDateString());
-            
-            datasets = numericCols.slice(0, 3).map((col, index) => ({
-                label: col,
-                data: sortedData.map(row => parseFloat(row[col]) || 0),
-                borderColor: this.getColorPalette()[index],
-                backgroundColor: this.getColorPalette()[index] + '20',
-                fill: false,
-                tension: 0.1,
-                pointRadius: 3,
-                pointHoverRadius: 5
-            }));
-        } else {
-            // Sequential numeric data
-            labels = data.map((_, index) => `Point ${index + 1}`);
-            datasets = numericCols.slice(0, 3).map((col, index) => ({
-                label: col,
-                data: data.map(row => parseFloat(row[col]) || 0),
-                borderColor: this.getColorPalette()[index],
-                backgroundColor: this.getColorPalette()[index] + '20',
-                fill: false,
-                tension: 0.1
-            }));
-        }
-                
-                return {
-            type: 'line',
-            data: { labels, datasets },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                        text: this.generateChartTitle(result, dateCol, numericCols.join(', '))
-                    },
-                    legend: {
-                        display: datasets.length > 1
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                        }
-                    }
-                },
-                interaction: {
-                    intersect: false,
-                    mode: 'index'
                 }
             }
         };
     }
 
-    // Enhanced Pie Chart Configuration
-    getEnhancedPieConfig(result) {
-        const data = result.data;
-        
-        let labels, chartData;
-        
-        if (result.type === 'group') {
-            labels = Object.keys(result.groups || {});
-            chartData = labels.map(label => (result.groups[label] || []).length);
-        } else {
-            const columns = Object.keys(data[0] || {});
-            const categoricalCol = this.findBestCategoricalColumn(columns, data);
-            const numericCol = this.findBestNumericColumn(columns, data);
-            
-            if (categoricalCol) {
-                if (numericCol) {
-                    const grouped = this.groupAndAggregate(data, categoricalCol, numericCol);
-                    labels = Object.keys(grouped);
-                    chartData = Object.values(grouped);
-                } else {
-                    const counts = this.countOccurrences(data, categoricalCol);
-                    labels = Object.keys(counts);
-                    chartData = Object.values(counts);
-                }
-            } else {
-                return null; // No suitable data for pie chart
-            }
-        }
-        
-        // Limit to top 8 categories for readability
-        if (labels.length > 8) {
-            const combined = labels.map((label, index) => ({ label, value: chartData[index] }))
-                .sort((a, b) => b.value - a.value);
-            
-            const top7 = combined.slice(0, 7);
-            const others = combined.slice(7).reduce((sum, item) => sum + item.value, 0);
-            
-            labels = [...top7.map(item => item.label), 'Others'];
-            chartData = [...top7.map(item => item.value), others];
-        }
-
-                return {
-                    type: 'pie',
-                    data: {
-                labels: labels,
-                        datasets: [{
-                    data: chartData,
-                    backgroundColor: this.generateColors(labels.length, 0.8),
-                    borderColor: this.generateColors(labels.length, 1),
-                    borderWidth: 2
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                        text: this.generateChartTitle(result)
-                    },
-                    legend: {
-                        position: 'right',
-                        labels: {
-                            boxWidth: 12,
-                            padding: 15
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => {
-                                const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
-                                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                return `${context.label}: ${context.parsed.toLocaleString()} (${percentage}%)`;
-                            }
-                        }
-                            }
-                        }
-                    }
-                };
-    }
-
-    // Enhanced Scatter Plot Configuration
-    getEnhancedScatterConfig(result) {
+    // Enhanced Line Chart Configuration
+    getEnhancedLineConfig(result, xAxis = null, yAxis = null) {
         const data = result.data;
         const columns = Object.keys(data[0] || {});
-        const numericCols = this.findAllNumericColumns(columns, data);
         
-        if (numericCols.length < 2) {
-            return this.getEnhancedBarConfig(result); // Fallback
+        // Use AI-suggested axes or auto-detect
+        const xCol = xAxis || this.findBestDateColumn(columns, data) || columns[0];
+        const yCol = yAxis || this.findBestNumericColumn(columns, data);
+        
+        if (!yCol) {
+            return this.getEnhancedBarConfig(result, xAxis, yAxis); // Fallback
         }
         
-        const xCol = numericCols[0];
-        const yCol = numericCols[1];
-        const sizeCol = numericCols[2]; // Optional third dimension
+        let labels, datasets;
         
-        const scatterData = data.map(row => {
-            const point = {
-                x: parseFloat(row[xCol]) || 0,
-                y: parseFloat(row[yCol]) || 0
-            };
+        // Check if x-axis is date/time
+        const isDateCol = this.isDateColumn(xCol, data);
+        
+        if (isDateCol) {
+            // Time series data
+            const sortedData = [...data].sort((a, b) => new Date(a[xCol]) - new Date(b[xCol]));
+            labels = sortedData.map(row => new Date(row[xCol]).toLocaleDateString());
             
-            if (sizeCol) {
-                point.r = Math.max(3, Math.min(20, (parseFloat(row[sizeCol]) || 1) / 10));
-            }
-            
-            return point;
-        });
-
-                return {
-            type: sizeCol ? 'bubble' : 'scatter',
-                    data: {
-                        datasets: [{
-                    label: `${yCol} vs ${xCol}`,
-                    data: scatterData,
-                    backgroundColor: this.getColorPalette()[0] + '60',
-                    borderColor: this.getColorPalette()[0],
-                    borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
+            datasets = [{
+                label: yCol,
+                data: sortedData.map(row => parseFloat(row[yCol]) || 0),
+                borderColor: this.getColorPalette()[0],
+                backgroundColor: this.getColorPalette()[0] + '20',
+                fill: false,
+                tension: 0.1,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }];
+        } else {
+            // Categorical or sequential data
+            labels = data.map(row => row[xCol]);
+            datasets = [{
+                label: yCol,
+                data: data.map(row => parseFloat(row[yCol]) || 0),
+                borderColor: this.getColorPalette()[0],
+                backgroundColor: this.getColorPalette()[0] + '20',
+                fill: false,
+                tension: 0.1,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }];
+        }
+                
+        return {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
                         text: this.generateChartTitle(result, xCol, yCol)
                     },
                     legend: {
@@ -1728,6 +1540,378 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
                 }
             }
         };
+    }
+
+    // Enhanced Pie Chart Configuration
+    getEnhancedPieConfig(result) {
+        const data = result.data;
+        
+        let labels, chartData;
+        
+        if (result.type === 'group') {
+            labels = Object.keys(result.groups || {});
+            chartData = labels.map(label => (result.groups[label] || []).length);
+        } else {
+            const columns = Object.keys(data[0] || {});
+            const categoricalCol = this.findBestCategoricalColumn(columns, data);
+            const numericCol = this.findBestNumericColumn(columns, data);
+            
+            if (categoricalCol) {
+                if (numericCol) {
+                    const grouped = this.groupAndAggregate(data, categoricalCol, numericCol);
+                    labels = Object.keys(grouped);
+                    chartData = Object.values(grouped);
+                } else {
+                    const counts = this.countOccurrences(data, categoricalCol);
+                    labels = Object.keys(counts);
+                    chartData = Object.values(counts);
+                }
+            } else {
+                return null; // No suitable data for pie chart
+            }
+        }
+        
+        // Limit to top 8 categories for readability
+        if (labels.length > 8) {
+            const combined = labels.map((label, index) => ({ label, value: chartData[index] }))
+                .sort((a, b) => b.value - a.value);
+            
+            const top7 = combined.slice(0, 7);
+            const others = combined.slice(7).reduce((sum, item) => sum + item.value, 0);
+            
+            labels = [...top7.map(item => item.label), 'Others'];
+            chartData = [...top7.map(item => item.value), others];
+        }
+
+        return {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: chartData,
+                    backgroundColor: this.generateColors(labels.length, 0.8),
+                    borderColor: this.generateColors(labels.length, 1),
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: this.generateChartTitle(result)
+                    },
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 12,
+                            padding: 15
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${context.label}: ${context.parsed.toLocaleString()} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // Enhanced Scatter Plot Configuration
+    getEnhancedScatterConfig(result, xAxis = null, yAxis = null) {
+        const data = result.data;
+        const columns = Object.keys(data[0] || {});
+        const numericCols = this.findAllNumericColumns(columns, data);
+        
+        if (numericCols.length < 2) {
+            return this.getEnhancedBarConfig(result); // Fallback
+        }
+        
+        // Use AI-suggested axes or auto-detect
+        const xCol = xAxis || numericCols[0];
+        const yCol = yAxis || numericCols[1];
+        const sizeCol = numericCols[2]; // Optional third dimension
+        
+        const scatterData = data.map(row => {
+            const point = {
+                x: parseFloat(row[xCol]) || 0,
+                y: parseFloat(row[yCol]) || 0
+            };
+            
+            if (sizeCol) {
+                point.r = Math.max(3, Math.min(20, (parseFloat(row[sizeCol]) || 1) / 10));
+            }
+            
+            return point;
+        });
+
+        return {
+            type: sizeCol ? 'bubble' : 'scatter',
+            data: {
+                datasets: [{
+                    label: `${yCol} vs ${xCol}`,
+                    data: scatterData,
+                    backgroundColor: this.getColorPalette()[0] + '60',
+                    borderColor: this.getColorPalette()[0],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: `${yCol} vs ${xCol}`
+                    },
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: xCol
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return typeof value === 'number' ? value.toLocaleString() : value;
+                            }
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: yCol
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return typeof value === 'number' ? value.toLocaleString() : value;
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // Update chart with intelligent chart selection
+    updateChart(result, query, aiSuggestions = null) {
+        const chartContainer = document.getElementById('chartContainer');
+        if (!chartContainer) {
+            console.error('Chart container not found');
+            return;
+        }
+
+        // Destroy existing chart if it exists
+        if (this.currentChart) {
+            this.currentChart.destroy();
+            this.currentChart = null;
+        }
+
+        // Clear container and create canvas
+        chartContainer.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'dataChart';
+        canvas.style.maxHeight = '400px';
+        chartContainer.appendChild(canvas);
+
+        // Get chart configuration based on type
+        let chartConfig = null;
+        const chartType = result.chartType || this.selectOptimalChartType(result);
+
+        // Use AI suggestions if available
+        const xAxis = aiSuggestions?.xAxis;
+        const yAxis = aiSuggestions?.yAxis;
+
+        console.log('Creating chart of type:', chartType, 'for result:', result);
+
+        try {
+            switch (chartType) {
+                case 'bar':
+                    chartConfig = this.getEnhancedBarConfig(result, xAxis, yAxis);
+                    break;
+                case 'line':
+                    chartConfig = this.getEnhancedLineConfig(result, xAxis, yAxis);
+                    break;
+                case 'pie':
+                    chartConfig = this.getEnhancedPieConfig(result);
+                    break;
+                case 'doughnut':
+                    chartConfig = this.getEnhancedDoughnutConfig(result);
+                    break;
+                case 'scatter':
+                    chartConfig = this.getEnhancedScatterConfig(result, xAxis, yAxis);
+                    break;
+                case 'histogram':
+                    chartConfig = this.getEnhancedHistogramConfig(result);
+                    break;
+                case 'area':
+                    chartConfig = this.getEnhancedAreaConfig(result, xAxis, yAxis);
+                    break;
+                case 'radar':
+                    chartConfig = this.getEnhancedRadarConfig(result);
+                    break;
+                case 'polarArea':
+                    chartConfig = this.getEnhancedPolarAreaConfig(result);
+                    break;
+                case 'bubble':
+                    chartConfig = this.getEnhancedBubbleConfig(result);
+                    break;
+                default:
+                    chartConfig = this.getEnhancedBarConfig(result, xAxis, yAxis);
+            }
+
+            // If no chart config was generated, create a minimal fallback chart
+            if (!chartConfig) {
+                chartConfig = this.createMinimalFallbackChart(result);
+            }
+
+            if (chartConfig) {
+                const ctx = canvas.getContext('2d');
+                this.currentChart = new Chart(ctx, chartConfig);
+                this.updateChartInfo(result, query);
+                console.log('Chart created successfully');
+            } else {
+                this.displayNoChartMessage(result, query);
+            }
+        } catch (error) {
+            console.error('Error creating chart:', error);
+            // Try to create a simple fallback chart
+            try {
+                const fallbackConfig = this.createMinimalFallbackChart(result);
+                if (fallbackConfig) {
+                    const ctx = canvas.getContext('2d');
+                    this.currentChart = new Chart(ctx, fallbackConfig);
+                    this.updateChartInfo(result, query);
+                } else {
+                    this.displayNoChartMessage(result, query);
+                }
+            } catch (fallbackError) {
+                console.error('Fallback chart creation failed:', fallbackError);
+                this.displayNoChartMessage(result, query);
+            }
+        }
+    }
+
+    // New method to create minimal fallback charts
+    createMinimalFallbackChart(result) {
+        const data = result.data;
+        if (!data || !Array.isArray(data) || data.length === 0) {
+            return null;
+        }
+
+        const columns = Object.keys(data[0] || {});
+        if (columns.length === 0) {
+            return null;
+        }
+
+        // Create a simple bar chart showing data counts or first numeric column
+        const numericColumns = columns.filter(col => this.isNumericColumn(col, data));
+        const categoricalColumns = columns.filter(col => this.isCategoricalColumn(col, data));
+
+        let labels = [];
+        let chartData = [];
+        let label = 'Count';
+
+        if (result.type === 'aggregate' && result.result !== undefined) {
+            // Single value result
+            labels = [result.column || 'Result'];
+            chartData = [result.result];
+            label = result.operation || 'Value';
+        } else if (categoricalColumns.length > 0) {
+            // Group by first categorical column
+            const groupCol = categoricalColumns[0];
+            const counts = this.countOccurrences(data, groupCol);
+            labels = Object.keys(counts).slice(0, 10); // Limit to 10 categories
+            chartData = labels.map(key => counts[key]);
+            label = 'Count';
+        } else if (numericColumns.length > 0) {
+            // Show distribution of first numeric column
+            const numCol = numericColumns[0];
+            const values = data.map(row => parseFloat(row[numCol])).filter(val => !isNaN(val));
+            if (values.length > 0) {
+                const bins = this.createHistogramBins(values, 8);
+                labels = bins.map(bin => `${bin.min.toFixed(1)}-${bin.max.toFixed(1)}`);
+                chartData = bins.map(bin => bin.count);
+                label = 'Frequency';
+            }
+        } else {
+            // Last resort: show row indices
+            labels = data.slice(0, 10).map((_, index) => `Row ${index + 1}`);
+            chartData = data.slice(0, 10).map(() => 1);
+            label = 'Records';
+        }
+
+        if (labels.length === 0 || chartData.length === 0) {
+            return null;
+        }
+
+        return {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: chartData,
+                    backgroundColor: this.generateColors(labels.length, 0.7),
+                    borderColor: this.generateColors(labels.length, 1),
+                    borderWidth: 1,
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: result.summary || 'Data Visualization'
+                    },
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return typeof value === 'number' ? value.toLocaleString() : value;
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // New method to display message when no chart can be created
+    displayNoChartMessage(result, query) {
+        const chartContainer = document.getElementById('chartContainer');
+        if (!chartContainer) return;
+
+        const messageHtml = `
+            <div class="no-chart-message">
+                <div class="no-chart-icon">📊</div>
+                <h4>Visualization Not Available</h4>
+                <p>Unable to create a chart for this query, but your results are available in the Table and Summary tabs.</p>
+                <div class="result-summary">
+                    <strong>Query:</strong> "${query}"<br>
+                    <strong>Result:</strong> ${result.summary || 'Analysis completed successfully'}
+                </div>
+            </div>
+        `;
+
+        chartContainer.innerHTML = messageHtml;
+        this.updateChartInfo(result, query);
     }
 
     // Enhanced chart generation with intelligent chart selection
@@ -2577,8 +2761,8 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         };
     }
     
-    getEnhancedAreaConfig(result) {
-        const lineConfig = this.getEnhancedLineConfig(result);
+    getEnhancedAreaConfig(result, xAxis = null, yAxis = null) {
+        const lineConfig = this.getEnhancedLineConfig(result, xAxis, yAxis);
         if (!lineConfig) return null;
         
         return {
@@ -3009,34 +3193,59 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         this.switchTab('chart');
     }
 
-    // New method to display AI summary
+    // Enhanced method to display AI summary
     displayAISummary(summary) {
+        if (!summary) return;
+        
         const summaryContainer = document.getElementById('aiSummaryContainer') || this.createAISummaryContainer();
-        if (summaryContainer) {
-            summaryContainer.innerHTML = `
-                <div class="ai-summary-card">
-                    <div class="ai-summary-header">
-                        <i class="fas fa-brain"></i>
-                        <span>AI Analysis Summary</span>
+        if (!summaryContainer) return;
+        
+        const summaryHtml = `
+            <div class="ai-summary-card">
+                <div class="ai-summary-header">
+                    <div class="ai-summary-icon">🤖</div>
+                    <div class="ai-summary-title">
+                        <h4>AI Analysis Summary</h4>
+                        <span class="ai-summary-badge">Powered by Gemini AI</span>
                     </div>
-                    <div class="ai-summary-content">${summary}</div>
                 </div>
-            `;
-            summaryContainer.style.display = 'block';
-        }
+                <div class="ai-summary-content">
+                    <div class="ai-summary-text">${summary}</div>
+                </div>
+                <div class="ai-summary-footer">
+                    <small>💡 This summary was generated by AI to help you understand your data insights</small>
+                </div>
+            </div>
+        `;
+        
+        summaryContainer.innerHTML = summaryHtml;
+        summaryContainer.style.display = 'block';
+        
+        // Scroll to show the summary
+        setTimeout(() => {
+            summaryContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
     }
 
-    // Create AI summary container if it doesn't exist
+    // Enhanced method to create AI summary container
     createAISummaryContainer() {
-        const chartContainer = document.getElementById('chartContainer');
-        if (!chartContainer) return null;
+        const chartTab = document.getElementById('chartTab');
+        if (!chartTab) return null;
         
         let summaryContainer = document.getElementById('aiSummaryContainer');
         if (!summaryContainer) {
             summaryContainer = document.createElement('div');
             summaryContainer.id = 'aiSummaryContainer';
             summaryContainer.className = 'ai-summary-container';
-            chartContainer.parentNode.insertBefore(summaryContainer, chartContainer);
+            summaryContainer.style.display = 'none';
+            
+            // Insert before chart container
+            const chartContainer = document.getElementById('chartContainer');
+            if (chartContainer) {
+                chartTab.insertBefore(summaryContainer, chartContainer);
+            } else {
+                chartTab.appendChild(summaryContainer);
+            }
         }
         return summaryContainer;
     }
@@ -3137,6 +3346,112 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         }
         
         summaryStats.innerHTML = summaryHtml;
+    }
+
+    // Enhanced method to generate AI summary of results
+    async generateResultSummary(result, query, queryStructure) {
+        try {
+            if (!this.aiService || !this.aiService.hasValidApiKey()) {
+                return this.generateFallbackSummary(result, query);
+            }
+            
+            const data = result.data;
+            const dataPreview = Array.isArray(data) ? data.slice(0, 10) : [data];
+            
+            const summaryPrompt = `
+            Analyze these query results and provide a concise, business-friendly summary in exactly 150-200 words:
+            
+            Original Query: "${query}"
+            Query Type: ${queryStructure?.queryType || result.type || 'analysis'}
+            Chart Type: ${result.chartType || 'table'}
+            
+            Results Summary:
+            - Total Records Analyzed: ${Array.isArray(data) ? data.length : 1}
+            - Result Type: ${result.type || 'data analysis'}
+            ${result.summary ? `- Key Finding: ${result.summary}` : ''}
+            
+            Sample Results:
+            ${JSON.stringify(dataPreview, null, 2)}
+            
+            Provide insights that include:
+            1. What the analysis reveals (key findings)
+            2. Notable patterns, trends, or outliers
+            3. Business implications or actionable recommendations
+            4. Context about data quality or limitations if relevant
+            
+            Write in clear, professional language suitable for business stakeholders. Focus on practical insights and avoid technical jargon.`;
+            
+            const summary = await this.aiService.generateResultSummary(summaryPrompt);
+            return summary || this.generateFallbackSummary(result, query);
+        } catch (error) {
+            console.error('Error generating result summary:', error);
+            return this.generateFallbackSummary(result, query);
+        }
+    }
+
+    // Method to generate basic AI summary for pattern-matched queries
+    async generateBasicResultSummary(result, query) {
+        try {
+            if (!this.aiService || !this.aiService.hasValidApiKey()) {
+                return this.generateFallbackSummary(result, query);
+            }
+
+            const summaryPrompt = `
+            Provide a brief business summary (150-200 words) for this data analysis:
+            
+            Query: "${query}"
+            Analysis Type: ${result.type}
+            Result: ${result.summary || 'Analysis completed'}
+            Data Points: ${Array.isArray(result.data) ? result.data.length : 1}
+            
+            Focus on:
+            1. What this analysis tells us
+            2. Key business insights
+            3. Practical implications
+            4. Recommendations for action
+            
+            Keep it concise and business-focused.`;
+
+            const summary = await this.aiService.generateResultSummary(summaryPrompt);
+            return summary || this.generateFallbackSummary(result, query);
+        } catch (error) {
+            console.error('Error generating basic summary:', error);
+            return this.generateFallbackSummary(result, query);
+        }
+    }
+
+    // Fallback summary generation without AI
+    generateFallbackSummary(result, query) {
+        const dataCount = Array.isArray(result.data) ? result.data.length : 1;
+        const analysisType = result.type || 'analysis';
+        
+        let summary = `Analysis completed for query: "${query}". `;
+        
+        switch (analysisType) {
+            case 'aggregate':
+                summary += `Calculated ${result.operation} of ${result.column}: ${result.result?.toFixed(2) || 'N/A'}. `;
+                summary += `This provides insight into the central tendency of your ${result.column} data. `;
+                break;
+            case 'group':
+                summary += `Data grouped by ${result.column} showing ${dataCount} categories. `;
+                summary += `This segmentation helps identify patterns and differences across groups. `;
+                break;
+            case 'correlation':
+                summary += `Analyzed relationship between ${result.col1} and ${result.col2} using ${dataCount} data points. `;
+                summary += `Correlation analysis helps understand how these variables relate to each other. `;
+                break;
+            case 'sort':
+                summary += `Identified top ${result.count || dataCount} records by ${result.column}. `;
+                summary += `This ranking helps prioritize and identify high-performing items. `;
+                break;
+            default:
+                summary += `Processed ${dataCount} records for analysis. `;
+                summary += `The results provide valuable insights into your data patterns. `;
+        }
+        
+        summary += `Review the chart and table views for detailed findings. Consider exploring related questions to gain deeper insights.`;
+        
+        return summary;
     }
 }
 

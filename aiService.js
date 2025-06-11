@@ -238,30 +238,49 @@ class AIService {
             const sampleData = data.slice(0, 10);
             
             const prompt = `
-            You are a data analyst. Analyze this query for a CSV dataset and provide a structured response.
+            You are an expert data analyst. Analyze this user query and provide the BEST possible visualization strategy.
             
-            Dataset Info:
+            Dataset Information:
             - Columns: ${columns.join(', ')}
             - Total rows: ${data.length}
             - Sample data: ${JSON.stringify(sampleData.slice(0, 3), null, 2)}
             
             User Query: "${query}"
             
+            IMPORTANT: Choose the most appropriate chart type and axes that make logical sense for the data and query.
+            
+            For charts, consider:
+            - Bar charts: for comparing categories or groups
+            - Line charts: for trends over time or continuous data
+            - Pie charts: for parts of a whole (percentages)
+            - Scatter plots: for correlations between two numeric variables
+            - Area charts: for cumulative data or multiple series
+            - Histograms: for data distribution
+            
+            For axes, think carefully:
+            - X-axis should be the independent variable (categories, time, grouping factor)
+            - Y-axis should be the dependent variable (values being measured/compared)
+            - Use meaningful, descriptive axis labels
+            
             Provide a JSON response with this exact structure:
             {
-                "queryType": "aggregation|filter|groupby|correlation|trend|distribution",
-                "targetColumns": ["column1", "column2"],
-                "operation": "sum|avg|count|max|min|group|filter|compare",
+                "queryType": "aggregation|filter|groupby|correlation|trend|distribution|comparison",
+                "targetColumns": ["primary_column", "secondary_column"],
+                "operation": "sum|avg|count|max|min|group|filter|compare|trend",
                 "filterConditions": {},
-                "chartType": "bar|line|pie|scatter|histogram|table",
-                "sqlLikeQuery": "SELECT ... FROM data WHERE ...",
-                "expectedResult": "description of what the query should return",
+                "chartType": "bar|line|pie|scatter|histogram|area|table",
+                "xAxisLabel": "Descriptive X-axis label",
+                "yAxisLabel": "Descriptive Y-axis label", 
+                "chartTitle": "Meaningful chart title",
+                "expectedResult": "Clear description of what this analysis shows",
                 "visualization": {
-                    "type": "bar|line|pie|scatter|histogram|table",
+                    "type": "bar|line|pie|scatter|histogram|area|table",
                     "xAxis": "column_name",
-                    "yAxis": "column_name",
-                    "groupBy": "column_name"
-                }
+                    "yAxis": "column_name", 
+                    "groupBy": "column_name_if_applicable",
+                    "reasoning": "Why this chart type and axes were chosen"
+                },
+                "insights": "Key insights this visualization should reveal"
             }
             
             Return ONLY valid JSON without any markdown formatting or explanations.`;
@@ -482,7 +501,7 @@ class AIService {
         return kpis;
     }
 
-    // New method to generate AI summary of query results
+    // Enhanced method to generate AI summary of query results
     async generateResultSummary(summaryPrompt) {
         if (!this.hasValidApiKey()) {
             return "Analysis completed successfully. Review the chart and data for insights.";
@@ -491,13 +510,63 @@ class AIService {
         try {
             await this.waitForRateLimit();
             
-            const result = await this.model.generateContent(summaryPrompt);
+            const enhancedPrompt = `
+            You are a senior data analyst providing insights to business stakeholders. 
+            
+            ${summaryPrompt}
+            
+            IMPORTANT REQUIREMENTS:
+            - Write exactly 150-200 words
+            - Use clear, professional business language
+            - Focus on actionable insights and practical implications
+            - Avoid technical jargon and statistical terms
+            - Structure as: Key Finding → Business Impact → Recommendation
+            - Be specific about numbers and trends when relevant
+            - End with a clear next step or recommendation
+            
+            Format your response as a cohesive paragraph that flows naturally.
+            Do not use bullet points or numbered lists.
+            Make it compelling and valuable for decision-makers.`;
+            
+            const result = await this.model.generateContent(enhancedPrompt);
             const response = await result.response;
             
-            return response.text().trim();
+            let summary = response.text().trim();
+            
+            // Ensure the summary is within word count (roughly 150-200 words)
+            const words = summary.split(/\s+/);
+            if (words.length > 220) {
+                summary = words.slice(0, 200).join(' ') + '...';
+            } else if (words.length < 100) {
+                // If too short, request a more detailed summary
+                const expandedPrompt = `
+                Expand this analysis into a more detailed business summary (150-200 words):
+                
+                ${summary}
+                
+                Add more context about:
+                - What this means for the business
+                - Potential opportunities or risks
+                - Specific recommendations for action
+                - Broader implications for strategy
+                
+                Keep it professional and actionable.`;
+                
+                try {
+                    await this.waitForRateLimit();
+                    const expandedResult = await this.model.generateContent(expandedPrompt);
+                    const expandedResponse = await expandedResult.response;
+                    summary = expandedResponse.text().trim();
+                } catch (expandError) {
+                    console.warn('Failed to expand summary:', expandError);
+                    // Keep original summary if expansion fails
+                }
+            }
+            
+            return summary;
         } catch (error) {
             console.error('Result Summary Generation Error:', error);
-            return "Analysis completed successfully. Review the chart and data for insights.";
+            return "Analysis completed successfully. The data reveals important patterns that can inform business decisions. Review the chart and table views for detailed findings and consider exploring related questions to gain deeper insights into your data.";
         }
     }
 }
