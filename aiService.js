@@ -646,113 +646,144 @@ class AIService {
             }
 
             const columns = Object.keys(data[0]);
-            const sampleData = data.slice(0, 10);
+            const sampleData = data.slice(0, 5);
+            
+            // Analyze column types and sample values
+            const columnAnalysis = columns.map(col => {
+                const sampleValues = sampleData.map(row => row[col]).filter(val => val != null && val !== '');
+                const isNumeric = sampleValues.every(val => !isNaN(parseFloat(val)));
+                const isDate = sampleValues.some(val => !isNaN(Date.parse(val)));
+                return {
+                    name: col,
+                    type: isDate ? 'date' : (isNumeric ? 'numeric' : 'text'),
+                    samples: sampleValues.slice(0, 3)
+                };
+            });
             
             const prompt = `
-            You are an expert data analyst and visualization specialist. Analyze this user query and provide PRECISE data processing and visualization instructions.
+            You are a PRECISION DATA ANALYST. Your job is to provide EXACT, ACCURATE data processing instructions.
             
-            Dataset Information:
-            - Available Columns: ${columns.join(', ')}
-            - Total rows: ${data.length}
-            - Sample data: ${JSON.stringify(sampleData.slice(0, 3), null, 2)}
+            DATASET ANALYSIS:
+            - Total Records: ${data.length}
+            - Available Columns: ${JSON.stringify(columnAnalysis, null, 2)}
+            - Sample Data: ${JSON.stringify(sampleData, null, 2)}
             
-            User Query: "${query}"
+            USER QUERY: "${query}"
             
-            CRITICAL ANALYSIS REQUIREMENTS:
-            1. UNDERSTAND THE QUESTION: What exactly is the user asking for?
-            2. IDENTIFY REQUIRED CALCULATIONS: Does this need rates, percentages, averages, sums, counts?
-            3. DETERMINE GROUPING: What should be grouped by (day of week, category, etc.)?
-            4. SPECIFY EXACT DATA TRANSFORMATION: How should raw data be processed?
-            5. CHOOSE OPTIMAL VISUALIZATION: What chart type best shows the answer?
-            6. SET PRECISE AXIS LABELS: What should X and Y axes represent?
+            CRITICAL REQUIREMENTS - FOLLOW EXACTLY:
             
-            SPECIAL HANDLING FOR COMMON PATTERNS:
-            - "Day of week" queries: Extract day name from date columns, group by day name
-            - "Rate" calculations: Identify numerator and denominator columns, calculate percentage
-            - "Highest/Lowest" queries: Sort results and show top/bottom values
-            - "Average/Mean" queries: Calculate averages within groups
-            - "Distribution" queries: Show frequency or count distributions
-            - "Trend" queries: Show changes over time periods
+            1. COLUMN IDENTIFICATION (MANDATORY):
+               - Identify EXACT column names from the dataset
+               - Use case-insensitive partial matching for column detection
+               - For "day of week" queries: find date columns and extract day names
+               - For rate/percentage queries: identify numerator and denominator columns
             
-            DATA PROCESSING INSTRUCTIONS:
-            - For date columns: Extract relevant time components (day of week, month, etc.)
-            - For rate calculations: Clearly specify formula (e.g., Opened / "No. of emails sent" * 100)
-            - For grouping: Specify exact grouping column and aggregation method
-            - For filtering: Define any necessary data filters
+            2. CALCULATION ACCURACY (ZERO TOLERANCE FOR ERRORS):
+               - Rates/Percentages: ALWAYS use (numerator_sum / denominator_sum) * 100
+               - Averages: Sum all values in group / count of values
+               - Totals: Sum all values in group
+               - NEVER calculate average of averages - always use raw data
             
-            VISUALIZATION GUIDELINES:
-            - Bar charts: Comparing categories or groups (X=category, Y=metric)
-            - Line charts: Trends over time (X=time_period, Y=metric)
-            - Pie charts: Parts of whole (percentages/proportions)
-            - Scatter plots: Relationships between two numeric variables
-            - Histograms: Distribution of values
+            3. GROUPING LOGIC (MUST BE PRECISE):
+               - "Day of week": Extract day names (Monday, Tuesday, etc.) from date columns
+               - Categories: Group by exact text values
+               - Time periods: Group by extracted time components
             
-            AXIS LABELING RULES:
-            - X-axis: The independent variable (what you're grouping by)
-            - Y-axis: The dependent variable (what you're measuring)
-            - Use business-friendly, descriptive labels
-            - Include units where applicable (%, $, count, etc.)
+            4. AXIS LABELING (BUSINESS FRIENDLY):
+               - X-axis: What you're comparing (days, categories, time periods)
+               - Y-axis: What you're measuring (rates %, counts, totals)
+               - Include units in labels (%, $, count, etc.)
             
-            Provide a JSON response with this exact structure:
+            5. DATA VALIDATION RULES:
+               - Verify columns exist before processing
+               - Handle null/empty values appropriately
+               - Ensure numeric columns for calculations
+               - Validate date formats for time-based queries
+            
+            QUERY PATTERN RECOGNITION:
+            - "highest/lowest rate": Calculate rates, sort descending/ascending
+            - "day of week": Extract day names from dates, group by day
+            - "average/mean": Calculate proper averages within groups
+            - "total/sum": Sum values within groups
+            - "trend over time": Use time-based grouping with line chart
+            - "distribution": Show frequency counts or percentages
+            
+            RESPONSE FORMAT (JSON ONLY - NO MARKDOWN):
             {
-                "queryType": "aggregation|groupby|calculation|filter|trend|distribution|comparison",
-                "targetColumns": ["primary_column", "secondary_column"],
-                "operation": "sum|avg|count|max|min|rate|percentage|group|filter|extract",
-                "calculationFormula": "specific formula if calculation needed (e.g., 'Opened / No. of emails sent * 100')",
-                "groupByColumn": "column to group by (e.g., day_of_week extracted from date)",
+                "queryType": "rate_analysis|groupby_analysis|trend_analysis|distribution_analysis",
+                "dataValidation": {
+                    "requiredColumns": ["exact_column_name1", "exact_column_name2"],
+                    "columnTypes": {"column1": "numeric", "column2": "date"},
+                    "validationRules": ["rule1", "rule2"]
+                },
                 "dataTransformation": {
-                    "extractDayOfWeek": "date_column_name if needed",
+                    "extractDayOfWeek": "exact_date_column_name_or_null",
                     "calculateRate": {
-                        "numerator": "column_name",
-                        "denominator": "column_name"
+                        "numerator": "exact_numerator_column",
+                        "denominator": "exact_denominator_column",
+                        "formula": "numerator_sum / denominator_sum * 100"
                     },
-                    "filterConditions": {},
-                    "sortBy": "column_name",
-                    "sortOrder": "asc|desc",
-                    "limit": "number_of_results"
+                    "groupByColumn": "exact_grouping_column_or_day_of_week",
+                    "aggregationType": "sum|average|count|rate",
+                    "sortBy": "rate|count|value",
+                    "sortOrder": "desc|asc",
+                    "limit": 10
                 },
-                "chartType": "bar|line|pie|scatter|histogram|area|bubble|radar|doughnut",
-                "xAxisLabel": "Descriptive X-axis label with units",
-                "yAxisLabel": "Descriptive Y-axis label with units", 
-                "chartTitle": "Clear, specific chart title answering the question",
-                "expectedDataStructure": [
-                    {
-                        "x_value": "example_x_value",
-                        "y_value": "example_y_value"
-                    }
-                ],
                 "visualization": {
-                    "type": "bar|line|pie|scatter|histogram|area|bubble|radar|doughnut",
-                    "xAxis": "exact_column_or_calculated_field",
-                    "yAxis": "exact_column_or_calculated_field", 
-                    "dataProcessing": "step-by-step data processing instructions",
-                    "reasoning": "Why this visualization and data processing approach"
+                    "chartType": "bar|line|pie",
+                    "xAxis": "exact_field_name",
+                    "yAxis": "calculated_field_name",
+                    "xAxisLabel": "Business friendly X label with units",
+                    "yAxisLabel": "Business friendly Y label with units",
+                    "chartTitle": "Clear, specific title answering the question"
                 },
-                "businessInsight": {
-                    "questionAnswered": "Restate what question this analysis answers",
-                    "keyMetric": "The main metric being measured",
-                    "comparisonBasis": "What is being compared (days, categories, etc.)",
-                    "actionableInsight": "What business decision this data supports"
+                "expectedOutput": {
+                    "dataStructure": [
+                        {"x_field": "example_value", "y_field": 25.5}
+                    ],
+                    "topResult": "Expected top result description",
+                    "insights": "What this analysis reveals"
+                },
+                "errorHandling": {
+                    "missingColumns": "fallback_strategy",
+                    "invalidData": "handling_approach",
+                    "emptyResults": "default_behavior"
                 }
             }
             
-            IMPORTANT: Return ONLY valid JSON without any markdown formatting or explanations.`;
+            CRITICAL SUCCESS FACTORS:
+            - Column names MUST match dataset exactly (case-insensitive)
+            - Calculations MUST be mathematically correct
+            - Grouping MUST produce meaningful categories
+            - Chart type MUST suit the data and question
+            - Axis labels MUST be clear and include units
+            
+            Return ONLY valid JSON. No explanations, no markdown, no extra text.`;
 
             const result = await this.model.generateContent(prompt);
             const response = await result.response;
             let responseText = response.text().trim();
             
-            // Clean up response
+            // Clean up response more aggressively
             responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+            responseText = responseText.replace(/^[^{]*/, '').replace(/[^}]*$/, '');
             
             try {
                 const structuredResponse = JSON.parse(responseText);
+                
+                // Validate the response structure
+                if (!structuredResponse.dataTransformation || !structuredResponse.visualization) {
+                    console.warn('Invalid AI response structure, using fallback');
+                    return this.generateFallbackQueryAnalysis(query, columns);
+                }
+                
                 return {
                     analysis: structuredResponse,
                     success: true
                 };
             } catch (parseError) {
-                console.warn('Failed to parse structured response, generating fallback');
+                console.warn('Failed to parse AI response:', parseError.message);
+                console.log('Raw response:', responseText);
                 return this.generateFallbackQueryAnalysis(query, columns);
             }
         } catch (error) {
@@ -762,68 +793,235 @@ class AIService {
     }
 
     generateFallbackQueryAnalysis(query, columns) {
+        console.log('Generating fallback analysis for query:', query);
         const lowerQuery = query.toLowerCase();
-        let queryType = 'filter';
-        let chartType = 'bar'; // Default to bar chart instead of table
-        let targetColumns = [];
         
-        // Enhanced pattern matching for better visualization defaults
-        if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
-            queryType = 'aggregation';
-            chartType = 'bar';
-        } else if (lowerQuery.includes('group') || lowerQuery.includes('by') || lowerQuery.includes('compare')) {
-            queryType = 'groupby';
-            chartType = 'bar';
-        } else if (lowerQuery.includes('trend') || lowerQuery.includes('over time') || lowerQuery.includes('line')) {
-            queryType = 'trend';
-            chartType = 'line';
-        } else if (lowerQuery.includes('distribution') || lowerQuery.includes('histogram')) {
-            queryType = 'distribution';
-            chartType = 'histogram';
-        } else if (lowerQuery.includes('correlation') || lowerQuery.includes('scatter') || lowerQuery.includes('relationship')) {
-            queryType = 'correlation';
-            chartType = 'scatter';
-        } else if (lowerQuery.includes('pie') || lowerQuery.includes('donut') || lowerQuery.includes('percentage') || lowerQuery.includes('proportion')) {
-            queryType = 'groupby';
-            chartType = 'pie';
-        } else if (lowerQuery.includes('top') || lowerQuery.includes('highest') || lowerQuery.includes('lowest') || lowerQuery.includes('ranking')) {
-            queryType = 'sort';
-            chartType = 'bar';
-        } else if (lowerQuery.includes('bubble') || lowerQuery.includes('size')) {
-            queryType = 'correlation';
-            chartType = 'bubble';
-        } else if (lowerQuery.includes('area') || lowerQuery.includes('cumulative')) {
-            queryType = 'trend';
-            chartType = 'area';
-        }
+        // Analyze available columns
+        const dateColumns = columns.filter(col => 
+            col.toLowerCase().includes('date') || 
+            col.toLowerCase().includes('time') ||
+            col.toLowerCase().includes('created') ||
+            col.toLowerCase().includes('sent')
+        );
         
-        // Try to identify relevant columns
-        columns.forEach(col => {
-            if (lowerQuery.includes(col.toLowerCase())) {
-                targetColumns.push(col);
+        const numericColumns = columns.filter(col => 
+            col.toLowerCase().includes('count') ||
+            col.toLowerCase().includes('number') ||
+            col.toLowerCase().includes('amount') ||
+            col.toLowerCase().includes('total') ||
+            col.toLowerCase().includes('sum') ||
+            col.toLowerCase().includes('open') ||
+            col.toLowerCase().includes('click') ||
+            col.toLowerCase().includes('sent') ||
+            col.toLowerCase().includes('rate') ||
+            col.toLowerCase().includes('percent')
+        );
+        
+        // Determine query type and processing
+        let queryType = 'groupby_analysis';
+        let chartType = 'bar';
+        let dataTransformation = {
+            extractDayOfWeek: null,
+            calculateRate: null,
+            groupByColumn: null,
+            aggregationType: 'count',
+            sortBy: 'count',
+            sortOrder: 'desc',
+            limit: 10
+        };
+        
+        let xAxisLabel = 'Category';
+        let yAxisLabel = 'Count';
+        let chartTitle = 'Data Analysis';
+        
+        // Pattern matching for specific query types
+        if (lowerQuery.includes('day') && lowerQuery.includes('week')) {
+            // Day of week analysis
+            queryType = 'rate_analysis';
+            dataTransformation.extractDayOfWeek = dateColumns[0] || columns[0];
+            dataTransformation.groupByColumn = 'day_of_week';
+            xAxisLabel = 'Day of Week';
+            chartTitle = 'Analysis by Day of Week';
+            
+            if (lowerQuery.includes('rate') || lowerQuery.includes('open')) {
+                // Rate calculation
+                const openColumn = columns.find(col => col.toLowerCase().includes('open')) || numericColumns[0];
+                const sentColumn = columns.find(col => col.toLowerCase().includes('sent') || col.toLowerCase().includes('email')) || numericColumns[1];
+                
+                if (openColumn && sentColumn) {
+                    dataTransformation.calculateRate = {
+                        numerator: openColumn,
+                        denominator: sentColumn,
+                        formula: "numerator_sum / denominator_sum * 100"
+                    };
+                    dataTransformation.aggregationType = 'rate';
+                    dataTransformation.sortBy = 'rate';
+                    yAxisLabel = 'Open Rate (%)';
+                    chartTitle = 'Open Rate by Day of Week';
+                }
+            } else if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
+                // Average calculation
+                const targetColumn = numericColumns.find(col => 
+                    lowerQuery.includes(col.toLowerCase())
+                ) || numericColumns[0];
+                
+                if (targetColumn) {
+                    dataTransformation.aggregationType = 'average';
+                    dataTransformation.sortBy = 'value';
+                    yAxisLabel = `Average ${targetColumn}`;
+                    chartTitle = `Average ${targetColumn} by Day of Week`;
+                }
             }
-        });
-        
-        if (targetColumns.length === 0) {
-            targetColumns = [columns[0]]; // Default to first column
+        } else if (lowerQuery.includes('rate') || lowerQuery.includes('percentage')) {
+            // Rate/percentage analysis
+            queryType = 'rate_analysis';
+            
+            const numeratorCol = columns.find(col => 
+                lowerQuery.includes(col.toLowerCase()) && 
+                (col.toLowerCase().includes('open') || col.toLowerCase().includes('click'))
+            ) || numericColumns[0];
+            
+            const denominatorCol = columns.find(col => 
+                col.toLowerCase().includes('sent') || 
+                col.toLowerCase().includes('total') ||
+                col.toLowerCase().includes('email')
+            ) || numericColumns[1];
+            
+            if (numeratorCol && denominatorCol) {
+                dataTransformation.calculateRate = {
+                    numerator: numeratorCol,
+                    denominator: denominatorCol,
+                    formula: "numerator_sum / denominator_sum * 100"
+                };
+                dataTransformation.aggregationType = 'rate';
+                dataTransformation.sortBy = 'rate';
+                yAxisLabel = 'Rate (%)';
+                chartTitle = 'Rate Analysis';
+                
+                // Determine grouping column
+                const groupCol = columns.find(col => 
+                    !numericColumns.includes(col) && 
+                    !dateColumns.includes(col) &&
+                    col.toLowerCase().includes('category') ||
+                    col.toLowerCase().includes('type') ||
+                    col.toLowerCase().includes('group')
+                ) || columns.find(col => !numericColumns.includes(col) && !dateColumns.includes(col));
+                
+                if (groupCol) {
+                    dataTransformation.groupByColumn = groupCol;
+                    xAxisLabel = groupCol;
+                }
+            }
+        } else if (lowerQuery.includes('trend') || lowerQuery.includes('over time') || lowerQuery.includes('timeline')) {
+            // Trend analysis
+            queryType = 'trend_analysis';
+            chartType = 'line';
+            
+            const dateCol = dateColumns[0] || columns[0];
+            const valueCol = numericColumns[0] || columns[1];
+            
+            dataTransformation.groupByColumn = dateCol;
+            dataTransformation.aggregationType = 'sum';
+            xAxisLabel = 'Time';
+            yAxisLabel = valueCol || 'Value';
+            chartTitle = 'Trend Over Time';
+        } else if (lowerQuery.includes('distribution') || lowerQuery.includes('breakdown')) {
+            // Distribution analysis
+            queryType = 'distribution_analysis';
+            chartType = 'pie';
+            
+            const categoryCol = columns.find(col => 
+                !numericColumns.includes(col) && 
+                !dateColumns.includes(col)
+            ) || columns[0];
+            
+            dataTransformation.groupByColumn = categoryCol;
+            dataTransformation.aggregationType = 'count';
+            xAxisLabel = categoryCol || 'Category';
+            yAxisLabel = 'Count';
+            chartTitle = 'Distribution Analysis';
+        } else if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
+            // Average analysis
+            queryType = 'groupby_analysis';
+            
+            const valueCol = numericColumns.find(col => 
+                lowerQuery.includes(col.toLowerCase())
+            ) || numericColumns[0];
+            
+            const groupCol = columns.find(col => 
+                !numericColumns.includes(col) && 
+                !dateColumns.includes(col)
+            ) || columns[0];
+            
+            dataTransformation.groupByColumn = groupCol;
+            dataTransformation.aggregationType = 'average';
+            dataTransformation.sortBy = 'value';
+            xAxisLabel = groupCol || 'Category';
+            yAxisLabel = `Average ${valueCol || 'Value'}`;
+            chartTitle = `Average ${valueCol || 'Value'} Analysis`;
+        } else if (lowerQuery.includes('total') || lowerQuery.includes('sum')) {
+            // Sum analysis
+            queryType = 'groupby_analysis';
+            
+            const valueCol = numericColumns.find(col => 
+                lowerQuery.includes(col.toLowerCase())
+            ) || numericColumns[0];
+            
+            const groupCol = columns.find(col => 
+                !numericColumns.includes(col) && 
+                !dateColumns.includes(col)
+            ) || columns[0];
+            
+            dataTransformation.groupByColumn = groupCol;
+            dataTransformation.aggregationType = 'sum';
+            dataTransformation.sortBy = 'value';
+            xAxisLabel = groupCol || 'Category';
+            yAxisLabel = `Total ${valueCol || 'Value'}`;
+            chartTitle = `Total ${valueCol || 'Value'} Analysis`;
         }
+        
+        // Ensure we have a grouping column
+        if (!dataTransformation.groupByColumn) {
+            dataTransformation.groupByColumn = columns.find(col => 
+                !numericColumns.includes(col) && 
+                !dateColumns.includes(col)
+            ) || columns[0];
+        }
+        
+        const fallbackAnalysis = {
+            queryType: queryType,
+            dataValidation: {
+                requiredColumns: [dataTransformation.groupByColumn].filter(Boolean),
+                columnTypes: {},
+                validationRules: ['check_column_exists', 'handle_null_values']
+            },
+            dataTransformation: dataTransformation,
+            visualization: {
+                chartType: chartType,
+                xAxis: dataTransformation.groupByColumn || 'category',
+                yAxis: dataTransformation.aggregationType === 'rate' ? 'rate' : 'value',
+                xAxisLabel: xAxisLabel,
+                yAxisLabel: yAxisLabel,
+                chartTitle: chartTitle
+            },
+            expectedOutput: {
+                dataStructure: [
+                    { "x_field": "example", "y_field": 0 }
+                ],
+                topResult: "Fallback analysis result",
+                insights: "Basic data analysis using pattern matching"
+            },
+            errorHandling: {
+                missingColumns: "use_first_available_column",
+                invalidData: "filter_out_invalid_values",
+                emptyResults: "show_no_data_message"
+            }
+        };
+        
+        console.log('Generated fallback analysis:', fallbackAnalysis);
         
         return {
-            analysis: {
-                queryType: queryType,
-                targetColumns: targetColumns,
-                operation: queryType === 'aggregation' ? 'avg' : 'filter',
-                filterConditions: {},
-                chartType: chartType,
-                sqlLikeQuery: `SELECT ${targetColumns.join(', ')} FROM data`,
-                expectedResult: `Analysis of ${targetColumns.join(' and ')} based on the query`,
-                visualization: {
-                    type: chartType,
-                    xAxis: targetColumns[0],
-                    yAxis: targetColumns[1] || targetColumns[0],
-                    groupBy: null
-                }
-            },
+            analysis: fallbackAnalysis,
             success: true
         };
     }
