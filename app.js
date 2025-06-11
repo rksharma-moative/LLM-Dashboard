@@ -1,5 +1,3 @@
-import AIService from './aiService.js';
-
 class CSVDashboard {
     constructor() {
         this.csvData = null;
@@ -8,10 +6,21 @@ class CSVDashboard {
         this.currentPage = 1;
         this.rowsPerPage = 20;
         this.filteredData = null;
-        this.aiService = new AIService(); // API key will be loaded from localStorage
+        this.aiService = null;
+        this.aiServiceReady = false;
         this.chatHistory = [];
         this.isChatOpen = false;
-        this.dataStructure = null; // Store analyzed data structure
+        this.dataStructure = null;
+        
+        // Performance optimizations
+        this.cache = new Map(); // Add caching
+        this.pendingRequests = new Map(); // Prevent duplicate requests
+        this.debounceTimers = new Map(); // Debounce timers
+        this.maxCacheSize = 50; // Limit cache size
+        
+        // Chunked processing
+        this.chunkSize = 1000; // Process data in chunks
+        this.isProcessing = false;
         
         this.sampleData = "Name,Age,Department,Salary,Years_Experience,Performance_Score\nJohn Smith,28,Engineering,75000,3,8.5\nJane Doe,32,Marketing,65000,5,9.2\nMike Johnson,45,Engineering,95000,15,7.8\nSarah Wilson,29,Sales,55000,2,8.9\nDavid Brown,38,Marketing,72000,8,8.1\nLisa Garcia,33,Engineering,82000,7,9.0\nTom Davis,41,Sales,68000,12,7.5\nEmily Rodriguez,26,Engineering,70000,1,8.8\nChris Lee,35,Marketing,69000,6,8.3\nAmy Taylor,30,Sales,58000,4,9.1";
         
@@ -36,12 +45,155 @@ class CSVDashboard {
     }
     
     init() {
+        // Start AI service initialization first (non-blocking)
+        this.initializeAIService();
+        
+        // Set up the rest of the interface
         this.setupEventListeners();
         this.setupDragAndDrop();
         this.setupChatInterface();
         this.setupApiKeyManagement();
-        this.checkApiKeyStatus();
-        console.log('Dashboard initialized');
+        
+        console.log('Dashboard initialized - AI service loading in background');
+    }
+
+    // Improved caching system
+    getCacheKey(operation, params) {
+        return `${operation}_${JSON.stringify(params)}`;
+    }
+
+    setCache(key, value) {
+        if (this.cache.size >= this.maxCacheSize) {
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+        this.cache.set(key, value);
+    }
+
+    getCache(key) {
+        return this.cache.get(key);
+    }
+
+    // Debounce function for performance
+    debounce(key, func, delay = 300) {
+        if (this.debounceTimers.has(key)) {
+            clearTimeout(this.debounceTimers.get(key));
+        }
+        
+        const timer = setTimeout(() => {
+            func();
+            this.debounceTimers.delete(key);
+        }, delay);
+        
+        this.debounceTimers.set(key, timer);
+    }
+
+    // Prevent duplicate requests
+    async executeWithDuplicateCheck(key, asyncFunc) {
+        if (this.pendingRequests.has(key)) {
+            return this.pendingRequests.get(key);
+        }
+
+        const promise = asyncFunc();
+        this.pendingRequests.set(key, promise);
+        
+        try {
+            const result = await promise;
+            this.pendingRequests.delete(key);
+            return result;
+        } catch (error) {
+            this.pendingRequests.delete(key);
+            throw error;
+        }
+    }
+
+    async initializeAIService() {
+        try {
+            console.log('🚀 Starting AI Service initialization...');
+            this.updateAIServiceStatus(false);
+            
+            this.updateInitializationProgress('Creating AI service...');
+            
+            // Create AI service instance immediately
+            this.aiService = new window.AIService();
+            
+            this.updateInitializationProgress('Loading AI libraries...');
+            
+            // Wait for initialization with timeout
+            await Promise.race([
+                this.aiService.initialize(),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('AI Service timeout')), 12000)
+                )
+            ]);
+            
+            this.aiServiceReady = true;
+            console.log('✅ AI Service ready!');
+            
+            this.updateInitializationProgress('AI service ready!');
+            setTimeout(() => {
+                this.checkApiKeyStatus();
+                this.updateAIServiceStatus(true);
+            }, 500);
+            
+        } catch (error) {
+            console.warn('⚠️ AI Service initialization failed:', error.message);
+            this.aiServiceReady = false;
+            
+            // Create a fallback service that works without AI
+            this.aiService = new window.AIService();
+            
+            this.updateInitializationProgress('Using offline mode');
+            setTimeout(() => {
+                this.updateAIServiceStatus(true);
+            }, 1000);
+        }
+    }
+
+    updateAIServiceStatus(isReady) {
+        const apiStatus = document.getElementById('apiStatus');
+        const apiStatusText = document.getElementById('apiStatusText');
+        
+        if (isReady) {
+            this.checkApiKeyStatus();
+        } else {
+            if (apiStatus && apiStatusText) {
+                apiStatus.style.display = 'block';
+                apiStatus.style.backgroundColor = '#e3f2fd';
+                apiStatus.style.color = '#1565c0';
+                apiStatusText.innerHTML = '🚀 <strong>Initializing AI service...</strong> <span style="font-size: 0.9em;">(This happens once)</span>';
+            }
+        }
+    }
+
+    updateInitializationProgress(message) {
+        const apiStatusText = document.getElementById('apiStatusText');
+        if (apiStatusText) {
+            apiStatusText.innerHTML = `🔧 <strong>${message}</strong>`;
+        }
+    }
+
+    async waitForAIService() {
+        // If already ready, return immediately
+        if (this.aiService && this.aiServiceReady) {
+            return this.aiService;
+        }
+
+        // If service exists but not ready, wait for initialization
+        if (this.aiService && this.aiService.initializationPromise) {
+            try {
+                await this.aiService.initializationPromise;
+                this.aiServiceReady = true;
+                return this.aiService;
+            } catch (error) {
+                console.warn('AI Service initialization failed, using fallback');
+                return this.aiService; // Return service for fallback operations
+            }
+        }
+
+        // Fallback: wait a bit and return what we have
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return this.aiService;
     }
     
     setupEventListeners() {
@@ -55,14 +207,18 @@ class CSVDashboard {
         if (loadSampleBtn) loadSampleBtn.addEventListener('click', () => this.loadSampleData());
         if (analyzeBtn) analyzeBtn.addEventListener('click', () => this.processQuery());
         if (exportBtn) exportBtn.addEventListener('click', () => this.exportData());
-        if (tableSearch) tableSearch.addEventListener('input', (e) => this.searchTable(e.target.value));
         
-        // Tab switching
+        // Debounced search
+        if (tableSearch) {
+            tableSearch.addEventListener('input', (e) => {
+                this.debounce('tableSearch', () => this.searchTable(e.target.value), 300);
+            });
+        }
+        
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab));
         });
         
-        // Query input enter key
         const queryInput = document.getElementById('queryInput');
         if (queryInput) {
             queryInput.addEventListener('keypress', (e) => {
@@ -109,7 +265,8 @@ class CSVDashboard {
         const apiStatusText = document.getElementById('apiStatusText');
         const testApiKeyBtn = document.getElementById('testApiKeyBtn');
 
-        if (this.aiService.hasValidApiKey()) {
+        // Check if AI service is ready and has a valid API key
+        if (this.aiService && this.aiServiceReady && this.aiService.hasValidApiKey()) {
             if (apiStatus && apiStatusText) {
                 apiStatus.style.display = 'block';
                 apiStatus.style.backgroundColor = '#d4edda';
@@ -125,6 +282,9 @@ class CSVDashboard {
                 apiStatus.style.backgroundColor = '#f8d7da';
                 apiStatus.style.color = '#721c24';
                 apiStatusText.textContent = '⚠ Please configure your API key to use AI features';
+            }
+            if (testApiKeyBtn) {
+                testApiKeyBtn.style.display = 'none';
             }
         }
     }
@@ -149,7 +309,17 @@ class CSVDashboard {
         }
 
         try {
-            this.aiService.setApiKey(apiKey);
+            // Show loading state while setting API key
+            this.showLoading(true, 'Configuring AI service...');
+            
+            // Wait for AI service to be ready before trying to set the API key
+            const aiService = await this.waitForAIService();
+            
+            if (!aiService) {
+                throw new Error('AI service failed to initialize. Please refresh the page and try again.');
+            }
+            
+            await aiService.setApiKey(apiKey);
             
             // Mask the input
             apiKeyInput.value = '••••••••••••••••••••••••••••••••••••';
@@ -168,7 +338,11 @@ class CSVDashboard {
             
             this.showMessage('API key saved successfully!', 'success');
         } catch (error) {
+            console.error('Error saving API key:', error);
             this.showMessage('Error saving API key: ' + error.message, 'error');
+        } finally {
+            // Always hide loading state
+            this.showLoading(false);
         }
     }
 
@@ -176,14 +350,22 @@ class CSVDashboard {
         const apiStatus = document.getElementById('apiStatus');
         const apiStatusText = document.getElementById('apiStatusText');
 
-        if (!this.aiService.hasValidApiKey()) {
-            this.showMessage('Please save an API key first', 'error');
-            return;
-        }
-
         try {
             this.showLoading(true, 'Testing API key...');
-            const result = await this.aiService.testApiKey();
+            
+            // Wait for AI service to be ready
+            const aiService = await this.waitForAIService();
+            
+            if (!aiService) {
+                throw new Error('AI service failed to initialize. Please refresh the page and try again.');
+            }
+
+            if (!aiService.hasValidApiKey()) {
+                this.showMessage('Please save an API key first', 'error');
+                return;
+            }
+
+            const result = await aiService.testApiKey();
             
             if (apiStatus && apiStatusText) {
                 apiStatus.style.backgroundColor = '#d4edda';
@@ -193,6 +375,8 @@ class CSVDashboard {
             
             this.showMessage('API key test successful!', 'success');
         } catch (error) {
+            console.error('Error testing API key:', error);
+            
             if (apiStatus && apiStatusText) {
                 apiStatus.style.backgroundColor = '#f8d7da';
                 apiStatus.style.color = '#721c24';
@@ -234,32 +418,64 @@ class CSVDashboard {
             return;
         }
         
-        this.showLoading(true, 'Uploading and analyzing file...');
+        // Check file size (50MB limit)
+        const maxSize = 50 * 1024 * 1024;
+        if (file.size > maxSize) {
+            this.showMessage('File too large. Please use files under 50MB', 'error');
+            return;
+        }
+        
+        this.showLoading(true, 'Processing file...');
+        
+        // Check cache first
+        const cacheKey = this.getCacheKey('fileUpload', { name: file.name, size: file.size, lastModified: file.lastModified });
+        const cachedResult = this.getCache(cacheKey);
+        
+        if (cachedResult) {
+            console.log('Using cached file result');
+            this.csvData = cachedResult.data;
+            this.displayFileInfo(file, cachedResult.meta);
+            this.showQueryInterface();
+            this.showLoading(false);
+            this.showMessage(`File loaded from cache! ${this.csvData.length} records.`, 'success');
+            return;
+        }
         
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
-            transformHeader: (header) => header.trim(), // Clean headers
-            transform: (value) => value ? value.toString().trim() : '', // Clean values
+            transformHeader: (header) => header.trim(),
+            transform: (value) => value ? value.toString().trim() : '',
+            worker: file.size > 1024 * 1024, // Use web worker for large files
             complete: async (results) => {
                 try {
-                if (results.errors.length > 0) {
+                    if (results.errors.length > 0) {
                         console.warn('CSV parsing warnings:', results.errors);
                     }
                     
-                    // Validate and clean data
                     const cleanedData = this.validateAndCleanData(results.data, file.name);
                     if (!cleanedData.isValid) {
                         this.showLoading(false);
                         this.showMessage(cleanedData.message, 'error');
-                    return;
-                }
+                        return;
+                    }
                     
                     this.csvData = cleanedData.data;
-                    await this.analyzeDataStructure();
-                    this.displayFileInfo(file, { data: this.csvData, meta: { fields: Object.keys(this.csvData[0] || {}) } });
-                this.showQueryInterface();
-                    await this.generateSuggestions();
+                    
+                    // Cache the result
+                    const resultMeta = { data: this.csvData, meta: { fields: Object.keys(this.csvData[0] || {}) } };
+                    this.setCache(cacheKey, resultMeta);
+                    
+                    // Execute operations in parallel
+                    const operations = [
+                        this.analyzeDataStructure(),
+                        this.generateSuggestions()
+                    ];
+                    
+                    await Promise.allSettled(operations);
+                    
+                    this.displayFileInfo(file, resultMeta);
+                    this.showQueryInterface();
                     this.showLoading(false);
                     this.showMessage(`File processed successfully! ${this.csvData.length} valid records loaded.`, 'success');
                 } catch (error) {
@@ -505,33 +721,19 @@ class CSVDashboard {
         if (!this.csvData || this.csvData.length === 0) return;
         
         try {
-            // Perform detailed column analysis
+            // Perform detailed column analysis for internal use only
             const columnAnalysis = this.performDetailedColumnAnalysis();
             
-            // Try AI analysis first
-            const structureAnalysis = await this.aiService.analyzeCSVStructure(this.csvData);
-            if (structureAnalysis.success) {
-                // Merge AI analysis with our detailed analysis
+            // Store for internal use but don't display
                 this.dataStructure = {
-                    ...structureAnalysis,
-                    detailedColumnAnalysis: columnAnalysis
-                };
-                console.log('Data structure analyzed with AI:', this.dataStructure);
-            } else {
-                // Fallback to our analysis
-                this.dataStructure = {
-                    analysis: this.generateFallbackAnalysis(columnAnalysis),
-                    columnAnalysis: columnAnalysis,
                     detailedColumnAnalysis: columnAnalysis,
                     totalRows: this.csvData.length,
                     totalColumns: Object.keys(this.csvData[0]).length,
                     columns: Object.keys(this.csvData[0]),
                     success: true
                 };
-                console.log('Data structure analyzed with fallback:', this.dataStructure);
-            }
             
-            this.displayDataStructureAnalysis(this.dataStructure);
+            console.log('Data structure analyzed internally:', this.dataStructure);
         } catch (error) {
             console.error('Error analyzing data structure:', error);
         }
@@ -632,24 +834,6 @@ class CSVDashboard {
         return true;
     }
 
-    generateFallbackAnalysis(columnAnalysis) {
-        const totalColumns = Object.keys(columnAnalysis).length;
-        const numericColumns = Object.values(columnAnalysis).filter(col => col.type === 'numeric').length;
-        const categoricalColumns = Object.values(columnAnalysis).filter(col => col.type === 'categorical').length;
-        const usefulColumns = Object.values(columnAnalysis).filter(col => col.isUsefulForAnalysis).length;
-        
-        return `Dataset Analysis:
-        
-Total Columns: ${totalColumns}
-Useful for Analysis: ${usefulColumns}
-Numeric Columns: ${numericColumns}
-Categorical Columns: ${categoricalColumns}
-
-Data Quality: ${this.assessOverallDataQuality(columnAnalysis)}
-
-This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalysis).join(', ')} analysis.`;
-    }
-
     assessOverallDataQuality(columnAnalysis) {
         const qualityScores = Object.values(columnAnalysis).map(col => {
             switch (col.dataQuality) {
@@ -682,80 +866,124 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         return types.length > 0 ? types : ['descriptive'];
     }
 
-    displayDataStructureAnalysis(analysis) {
-        const analysisSection = document.getElementById('dataAnalysisSection');
-        if (!analysisSection) return;
-
-        // Ensure we have analysis content
-        const analysisText = analysis.analysis || this.generateFallbackAnalysis(analysis.columnAnalysis || analysis.detailedColumnAnalysis);
-        const columnAnalysis = analysis.columnAnalysis || analysis.detailedColumnAnalysis || {};
-
-        const analysisHtml = `
-            <div class="card">
-                <div class="card__body">
-                    <h3>📊 Data Structure Analysis</h3>
-                    <div class="analysis-content">
-                        <div class="analysis-overview">
-                            <div class="analysis-text">${analysisText.replace(/\n/g, '<br>')}</div>
-                        </div>
-                        
-                        ${Object.keys(columnAnalysis).length > 0 ? `
-                        <div class="column-breakdown">
-                            <h4>📋 Column Details:</h4>
-                            <div class="columns-grid">
-                                ${Object.entries(columnAnalysis).map(([col, info]) => `
-                                    <div class="column-card">
-                                        <div class="column-header">
-                                            <div class="column-name">${col}</div>
-                                            <div class="column-type ${info.type}">${info.type}</div>
-                                        </div>
-                                        <div class="column-stats">
-                                            <div class="stat-row">
-                                                <span class="stat-label">Unique Values:</span>
-                                                <span class="stat-value">${info.uniqueCount || 'N/A'}</span>
-                                            </div>
-                                            ${info.nullPercentage !== undefined ? `
-                                            <div class="stat-row">
-                                                <span class="stat-label">Completeness:</span>
-                                                <span class="stat-value">${(100 - info.nullPercentage).toFixed(1)}%</span>
-                                            </div>
-                                            ` : ''}
-                                            ${info.sampleValues && info.sampleValues.length > 0 ? `
-                                            <div class="stat-row">
-                                                <span class="stat-label">Sample:</span>
-                                                <span class="stat-value">${info.sampleValues.slice(0, 3).join(', ')}</span>
-                                            </div>
-                                            ` : ''}
-                                            ${info.stats && info.stats.mean !== undefined ? `
-                                            <div class="stat-row">
-                                                <span class="stat-label">Average:</span>
-                                                <span class="stat-value">${info.stats.mean.toFixed(2)}</span>
-                                            </div>
-                                            ` : ''}
-                                        </div>
-                                        <div class="column-quality ${info.dataQuality || 'good'}">${info.dataQuality || 'good'} quality</div>
+    displayFallbackSuggestions() {
+        if (!this.csvData || this.csvData.length === 0) return;
+        
+        const columns = Object.keys(this.csvData[0]);
+        const numericColumns = columns.filter(col => {
+            const values = this.csvData.slice(0, 10).map(row => row[col]);
+            const numericValues = values.filter(val => !isNaN(parseFloat(val)) && val !== '');
+            return numericValues.length > values.length * 0.7;
+        });
+        
+        const categoricalColumns = columns.filter(col => {
+            const values = this.csvData.slice(0, 20).map(row => row[col]).filter(val => val && val.toString().trim());
+            const uniqueValues = [...new Set(values)];
+            return uniqueValues.length < values.length * 0.5 && uniqueValues.length > 1;
+        });
+        
+        const dateColumns = columns.filter(col => {
+            const lowerCol = col.toLowerCase();
+            return lowerCol.includes('date') || lowerCol.includes('time') || lowerCol.includes('year');
+        });
+        
+        const interestingSuggestions = [];
+        
+        // Modern visualization suggestions with specific chart types
+        if (numericColumns.length >= 2 && categoricalColumns.length >= 1) {
+            interestingSuggestions.push(`Create a bubble chart showing ${numericColumns[0]} vs ${numericColumns[1]} grouped by ${categoricalColumns[0]}`);
+            interestingSuggestions.push(`Show correlation heatmap between ${numericColumns.slice(0, 3).join(', ')}`);
+        }
+        
+        if (categoricalColumns.length >= 1 && numericColumns.length >= 1) {
+            interestingSuggestions.push(`Create a radar chart comparing ${numericColumns[0]} across different ${categoricalColumns[0]}`);
+            interestingSuggestions.push(`Show distribution of ${numericColumns[0]} by ${categoricalColumns[0]} using violin plot style`);
+            interestingSuggestions.push(`Create a treemap visualization of ${categoricalColumns[0]} by ${numericColumns[0]}`);
+        }
+        
+        if (dateColumns.length >= 1 && numericColumns.length >= 1) {
+            interestingSuggestions.push(`Show trend analysis of ${numericColumns[0]} over ${dateColumns[0]} with area chart`);
+            interestingSuggestions.push(`Create time series decomposition of ${numericColumns[0]} by ${dateColumns[0]}`);
+        }
+        
+        if (numericColumns.length >= 3) {
+            interestingSuggestions.push(`Create 3D scatter plot with ${numericColumns[0]}, ${numericColumns[1]}, and ${numericColumns[2]}`);
+            interestingSuggestions.push(`Show parallel coordinates plot for ${numericColumns.slice(0, 4).join(', ')}`);
+        }
+        
+        if (categoricalColumns.length >= 2) {
+            interestingSuggestions.push(`Create sunburst chart showing hierarchy of ${categoricalColumns[0]} and ${categoricalColumns[1]}`);
+            interestingSuggestions.push(`Show sankey diagram flow between ${categoricalColumns[0]} and ${categoricalColumns[1]}`);
+        }
+        
+        // Enhanced traditional suggestions with better descriptions
+        if (numericColumns.length > 0) {
+            interestingSuggestions.push(`What is the distribution pattern of ${numericColumns[0]}? Show me a histogram with statistical insights`);
+            interestingSuggestions.push(`Find outliers and anomalies in ${numericColumns[0]} data`);
+            interestingSuggestions.push(`Show top 10 highest ${numericColumns[0]} values with detailed breakdown`);
+        }
+        
+        if (categoricalColumns.length > 0) {
+            interestingSuggestions.push(`Create an interactive pie chart breakdown of ${categoricalColumns[0]} categories`);
+            interestingSuggestions.push(`Show percentage distribution of ${categoricalColumns[0]} with modern donut chart`);
+        }
+        
+        if (numericColumns.length >= 2) {
+            interestingSuggestions.push(`Analyze correlation strength between ${numericColumns[0]} and ${numericColumns[1]} with scatter plot`);
+            interestingSuggestions.push(`Create density plot showing relationship between ${numericColumns[0]} and ${numericColumns[1]}`);
+        }
+        
+        // Data insights and patterns
+        interestingSuggestions.push(`Show me the most interesting patterns and insights in this dataset`);
+        interestingSuggestions.push(`Create a comprehensive dashboard view of key metrics`);
+        interestingSuggestions.push(`Find and visualize the strongest relationships in the data`);
+        
+        // Performance and comparison analysis
+        if (categoricalColumns.length >= 1 && numericColumns.length >= 1) {
+            interestingSuggestions.push(`Compare performance metrics across ${categoricalColumns[0]} using multi-series bar chart`);
+            interestingSuggestions.push(`Show ranking analysis of ${categoricalColumns[0]} by ${numericColumns[0]} with horizontal bar chart`);
+        }
+        
+        // Ensure we have at least 8-10 suggestions
+        if (interestingSuggestions.length < 8) {
+            const additionalSuggestions = [
+                `Create an advanced statistical summary with box plots`,
+                `Show data quality analysis with missing value patterns`,
+                `Generate predictive insights and trend forecasting`,
+                `Create interactive filter dashboard for data exploration`,
+                `Show comparative analysis with benchmark indicators`,
+                `Generate automated insights with AI-powered recommendations`
+            ];
+            
+            additionalSuggestions.forEach(suggestion => {
+                if (interestingSuggestions.length < 10) {
+                    interestingSuggestions.push(suggestion);
+                }
+            });
+        }
+        
+        // Add a note about AI features and modern visualizations
+        if (!this.aiService || !this.aiServiceReady || !this.aiService.hasValidApiKey()) {
+            const suggestionsContainer = document.getElementById('suggestions');
+            if (suggestionsContainer) {
+                const aiNote = document.createElement('div');
+                aiNote.style.cssText = 'margin-bottom: 1rem; padding: 0.75rem; background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%); border-radius: 8px; font-size: 0.9rem; color: #1565c0; border: 1px solid rgba(33, 150, 243, 0.2);';
+                aiNote.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <span style="font-size: 1.2em;">🚀</span>
+                        <strong>Unlock Advanced Visualizations!</strong>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        ` : ''}
-                        
-                        <div class="analysis-insights">
-                            <h4>💡 Key Insights:</h4>
-                            <ul class="insights-list">
-                                <li>Dataset contains ${this.csvData.length.toLocaleString()} records across ${Object.keys(columnAnalysis).length} columns</li>
-                                <li>${Object.values(columnAnalysis).filter(col => col.type === 'numeric').length} numeric columns available for statistical analysis</li>
-                                <li>${Object.values(columnAnalysis).filter(col => col.type === 'categorical').length} categorical columns for grouping and segmentation</li>
-                                <li>Overall data quality: ${this.assessOverallDataQuality(columnAnalysis)}</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        analysisSection.innerHTML = analysisHtml;
-        analysisSection.style.display = 'block';
+                    <p style="margin: 0; line-height: 1.4;">
+                        Configure your Google AI API key above to access intelligent chart recommendations, 
+                        modern visualization types (bubble charts, radar plots, heatmaps), and AI-powered insights 
+                        that automatically choose the best way to visualize your data!
+                    </p>
+                `;
+                suggestionsContainer.appendChild(aiNote);
+            }
+        }
+        
+        this.displaySuggestions(interestingSuggestions.slice(0, 10));
     }
     
     // Enhanced file info display with accurate statistics
@@ -807,14 +1035,76 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         // Enhanced data preview with better handling
         const previewRows = this.csvData.slice(0, 5);
         const tableHtml = `
-            <h4>Data Preview (First 5 rows of ${rows} total)</h4>
+            <h4>📋 Data Preview & Column Analysis</h4>
+            <div class="data-overview">
+                <div class="overview-stats">
+                    <div class="overview-item">
+                        <span class="overview-label">Total Records:</span>
+                        <span class="overview-value">${rows.toLocaleString()}</span>
+                    </div>
+                    <div class="overview-item">
+                        <span class="overview-label">Columns:</span>
+                        <span class="overview-value">${columns.length}</span>
+                    </div>
+                    <div class="overview-item">
+                        <span class="overview-label">Data Quality:</span>
+                        <span class="overview-value">${completeness}% Complete</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="column-analysis-section">
+                <h5>🔍 Column Details</h5>
+                <div class="columns-overview-grid">
+                    ${columns.map(col => {
+                        const columnInfo = this.dataStructure?.detailedColumnAnalysis?.[col];
+                        const columnType = columnInfo?.type || this.getColumnType(col);
+                        const uniqueCount = columnInfo?.uniqueCount || 'N/A';
+                        const sampleValues = columnInfo?.sampleValues || [];
+                        const nullPercentage = columnInfo?.nullPercentage || 0;
+                        const completeness = (100 - nullPercentage).toFixed(1);
+                        
+                        return `
+                            <div class="column-overview-card">
+                                <div class="column-overview-header">
+                                    <div class="column-overview-name">${col}</div>
+                                    <div class="column-overview-type ${columnType}">${columnType}</div>
+                                </div>
+                                <div class="column-overview-stats">
+                                    <div class="column-stat">
+                                        <span class="stat-icon">🔢</span>
+                                        <span class="stat-text">${uniqueCount} unique values</span>
+                                    </div>
+                                    <div class="column-stat">
+                                        <span class="stat-icon">✅</span>
+                                        <span class="stat-text">${completeness}% complete</span>
+                                    </div>
+                                    ${sampleValues.length > 0 ? `
+                                    <div class="column-stat">
+                                        <span class="stat-icon">📝</span>
+                                        <span class="stat-text">e.g., ${sampleValues.slice(0, 2).join(', ')}</span>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+            
             <div class="table-wrapper">
+                <h5>📊 Sample Data (First 5 rows)</h5>
                 <table class="preview-table">
                     <thead>
                         <tr>
                             ${columns.map(col => {
                                 const columnType = this.dataStructure?.detailedColumnAnalysis?.[col]?.type || this.getColumnType(col);
-                                return `<th>${col} <span class="column-type ${columnType}">${columnType}</span></th>`;
+                                return `<th>
+                                    <div class="column-header-content">
+                                        <span class="column-name">${col}</span>
+                                        <span class="column-type-badge ${columnType}">${columnType}</span>
+                                    </div>
+                                </th>`;
                             }).join('')}
                         </tr>
                     </thead>
@@ -843,8 +1133,8 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
     
     getColumnType(columnName) {
         // Enhanced column type detection
-        if (this.dataStructure?.columnAnalysis?.[columnName]) {
-            return this.dataStructure.columnAnalysis[columnName].type;
+        if (this.dataStructure?.detailedColumnAnalysis?.[columnName]) {
+            return this.dataStructure.detailedColumnAnalysis[columnName].type;
         }
         
         const lowerName = columnName.toLowerCase();
@@ -865,20 +1155,39 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
     async generateSuggestions() {
         if (!this.csvData) return;
         
-        if (!this.aiService.hasValidApiKey()) {
-            console.log('No API key configured, using fallback suggestions');
-            this.displayFallbackSuggestions();
+        // Check cache first
+        const cacheKey = this.getCacheKey('generateSuggestions', this.csvData.slice(0, 10));
+        const cachedSuggestions = this.getCache(cacheKey);
+        
+        if (cachedSuggestions) {
+            console.log('Using cached suggestions');
+            this.displaySuggestions(cachedSuggestions);
             return;
         }
         
         try {
-            this.showLoading(true, 'Generating AI-powered suggestions...');
-            const result = await this.aiService.generateSuggestions(this.csvData);
+            // Wait for AI service to be ready
+            const aiService = await this.waitForAIService();
             
-            if (result.success && result.suggestions.length > 0) {
+            if (!aiService || !aiService.hasValidApiKey()) {
+                console.log('No API key configured, using fallback suggestions');
+                this.displayFallbackSuggestions();
+                return;
+            }
+            
+            this.showLoading(true, 'Generating AI-powered suggestions...');
+            
+            const result = await this.executeWithDuplicateCheck(
+                'generateSuggestions',
+                () => aiService.generateSuggestions(this.csvData)
+            );
+            
+            if (result && result.success && result.suggestions.length > 0) {
+                // Cache the suggestions
+                this.setCache(cacheKey, result.suggestions);
                 this.displaySuggestions(result.suggestions);
             } else {
-                console.warn('Failed to generate AI suggestions:', result.error);
+                console.log('AI suggestions failed, using fallback');
                 this.displayFallbackSuggestions();
             }
         } catch (error) {
@@ -893,94 +1202,28 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         const suggestionsContainer = document.getElementById('suggestions');
         if (!suggestionsContainer) return;
         
-        // Clear existing content
-        suggestionsContainer.innerHTML = `
-            <h4>💡 Suggested Analysis Questions</h4>
-            <div class="suggestions-grid" id="suggestionsGrid">
+        // Create suggestions with proper event handling
+        const suggestionsHtml = `
+            <h4>💡 Suggested Questions</h4>
+            <div class="suggestions-grid">
+                ${suggestions.map((suggestion, index) => `
+                    <button class="suggestion-btn" data-suggestion-index="${index}">
+                        ${suggestion}
+                    </button>
+                `).join('')}
             </div>
         `;
         
-        const suggestionsGrid = document.getElementById('suggestionsGrid');
+        suggestionsContainer.innerHTML = suggestionsHtml;
         
-        // Create suggestion buttons with proper event listeners
-        suggestions.forEach(suggestion => {
-            const button = document.createElement('button');
-            button.className = 'suggestion-btn';
-            button.textContent = suggestion;
-            button.addEventListener('click', () => {
-                this.fillQuery(suggestion);
+        // Add event listeners to avoid syntax errors
+        const suggestionButtons = suggestionsContainer.querySelectorAll('.suggestion-btn');
+        suggestionButtons.forEach((button, index) => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.fillQuery(suggestions[index]);
             });
-            suggestionsGrid.appendChild(button);
         });
-    }
-
-    displayFallbackSuggestions() {
-        if (!this.csvData || this.csvData.length === 0) return;
-        
-        const columns = Object.keys(this.csvData[0]);
-        const numericColumns = columns.filter(col => {
-            const values = this.csvData.slice(0, 10).map(row => row[col]);
-            const numericValues = values.filter(val => !isNaN(parseFloat(val)) && val !== '');
-            return numericValues.length > values.length * 0.7;
-        });
-        
-        const categoricalColumns = columns.filter(col => {
-            const values = this.csvData.slice(0, 20).map(row => row[col]).filter(val => val && val.toString().trim());
-            const uniqueValues = [...new Set(values)];
-            return uniqueValues.length < values.length * 0.5 && uniqueValues.length > 1;
-        });
-        
-        const fallbackSuggestions = [];
-        
-        // Add suggestions based on data structure
-        if (numericColumns.length > 0) {
-            fallbackSuggestions.push(`What is the average ${numericColumns[0]}?`);
-            fallbackSuggestions.push(`Show top 10 by ${numericColumns[0]}`);
-            if (numericColumns.length > 1) {
-                fallbackSuggestions.push(`Show correlation between ${numericColumns[0]} and ${numericColumns[1]}`);
-            }
-        }
-        
-        if (categoricalColumns.length > 0) {
-            fallbackSuggestions.push(`Group by ${categoricalColumns[0]}`);
-            if (numericColumns.length > 0) {
-                fallbackSuggestions.push(`Average ${numericColumns[0]} by ${categoricalColumns[0]}`);
-            }
-        }
-        
-        // Add general suggestions
-        fallbackSuggestions.push(`Show distribution of ${columns[0]}`);
-        fallbackSuggestions.push(`Count total records`);
-        
-        // Ensure we have at least 5 suggestions
-        if (fallbackSuggestions.length < 5) {
-            const additionalSuggestions = [
-                `Display first 20 rows`,
-                `Find maximum values`,
-                `Show data summary`,
-                `Count unique values`,
-                `Filter data by value`
-            ];
-            
-            additionalSuggestions.forEach(suggestion => {
-                if (fallbackSuggestions.length < 6) {
-                    fallbackSuggestions.push(suggestion);
-                }
-            });
-        }
-        
-        // Add a note about AI features
-        if (!this.aiService.hasValidApiKey()) {
-            const suggestionsContainer = document.getElementById('suggestions');
-            if (suggestionsContainer) {
-                const aiNote = document.createElement('div');
-                aiNote.style.cssText = 'margin-bottom: 1rem; padding: 0.75rem; background: #e3f2fd; border-radius: 6px; font-size: 0.9rem; color: #1565c0;';
-                aiNote.innerHTML = '💡 <strong>Tip:</strong> Configure your Google AI API key above to get intelligent, context-aware suggestions and analysis!';
-                suggestionsContainer.appendChild(aiNote);
-            }
-        }
-        
-        this.displaySuggestions(fallbackSuggestions.slice(0, 6));
     }
     
     fillQuery(query) {
@@ -1002,1970 +1245,96 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
             this.showMessage('Please upload a CSV file first.', 'warning');
             return;
         }
+
+        // Prevent multiple concurrent queries
+        if (this.isProcessing) {
+            this.showMessage('Please wait for the current query to finish processing.', 'info');
+            return;
+        }
         
         const query = queryInput.value.trim();
+        
+        // Check cache first
+        const cacheKey = this.getCacheKey('processQuery', { query, dataSize: this.csvData.length });
+        const cachedResult = this.getCache(cacheKey);
+        
+        if (cachedResult) {
+            console.log('Using cached query result');
+            this.displayResults(cachedResult.result, query);
+            if (cachedResult.aiSummary) {
+                this.displayAISummary(cachedResult.aiSummary);
+            }
+            this.showMessage('Query processed successfully! (from cache)', 'success');
+            return;
+        }
+
+        this.isProcessing = true;
         this.showLoading(true, 'Processing your query...');
         
         try {
             let result = null;
             let aiSummary = null;
             
-            if (this.aiService.hasValidApiKey()) {
-                // Use AI-powered structured query analysis
-                this.showLoading(true, 'Analyzing query with AI...');
-                const structuredAnalysis = await this.aiService.analyzeQueryWithStructure(this.csvData, query);
+            // Wait for AI service to be ready
+            const aiService = await this.waitForAIService();
+            
+            if (aiService && aiService.hasValidApiKey()) {
+                // Use duplicate check for AI requests
+                const analysisResult = await this.executeWithDuplicateCheck(
+                    `analyzeQuery_${query}`,
+                    () => aiService.analyzeQueryWithStructure(this.csvData, query)
+                );
                 
-                if (structuredAnalysis.success) {
-                    const queryStructure = structuredAnalysis.analysis;
-                    console.log('AI Query structure:', queryStructure);
+                if (analysisResult && analysisResult.success) {
+                    const queryStructure = analysisResult.analysis;
+                    console.log('AI Query Structure:', queryStructure);
                     
-                    // Process the query based on the structured analysis
-                    this.showLoading(true, 'Executing analysis...');
                     result = await this.executeStructuredQuery(queryStructure, query);
                     
                     if (result) {
-                        // Generate AI summary of results
+                        // Generate AI summary with duplicate check
                         this.showLoading(true, 'Generating AI insights...');
-                        aiSummary = await this.generateResultSummary(result, query, queryStructure);
+                        aiSummary = await this.executeWithDuplicateCheck(
+                            `generateSummary_${query}`,
+                            () => this.generateResultSummary(result, query, queryStructure)
+                        );
                         result.aiSummary = aiSummary;
+                        result.queryStructure = queryStructure;
                     }
                 }
             }
             
-            // Fallback to pattern matching if AI failed or no API key
+            // Fallback to pattern matching if AI fails or no API key
             if (!result) {
-                console.log('Using pattern matching for query:', query);
-                this.showLoading(true, 'Analyzing with pattern matching...');
+                console.log('Using pattern matching fallback');
+                this.showLoading(true, 'Analyzing query patterns...');
                 result = this.parseQuery(query);
-                
-                // Generate basic summary even without AI
-                if (result && this.aiService.hasValidApiKey()) {
-                    try {
-                        this.showLoading(true, 'Generating insights...');
-                        aiSummary = await this.generateBasicResultSummary(result, query);
-                        result.aiSummary = aiSummary;
-                    } catch (error) {
-                        console.warn('Failed to generate AI summary:', error);
-                    }
+            
+                if (result && aiService && aiService.hasValidApiKey()) {
+                    aiSummary = await this.executeWithDuplicateCheck(
+                        `generateBasicSummary_${query}`,
+                        () => this.generateBasicResultSummary(result, query)
+                    );
+                    result.aiSummary = aiSummary;
                 }
             }
             
-            if (result) {
-                // Display results with AI summary
+            if (result && result.data) {
+                // Cache the result
+                this.setCache(cacheKey, { result, aiSummary });
+                
                 this.displayResults(result, query);
-                this.updateChart(result, query);
-                this.updateQueryHistory();
-                this.updateKPIs();
-                
-                this.showMessage('Analysis completed successfully!', 'success');
+                this.showMessage('Query processed successfully!', 'success');
             } else {
-                this.showMessage('Could not understand your query. Please try rephrasing or use one of the suggested questions.', 'warning');
+                this.showMessage('Could not process your query. Please try rephrasing it.', 'error');
             }
         } catch (error) {
-            console.error('Error processing query:', error);
-            this.showMessage('Error processing query. Please try again.', 'error');
+            console.error('Query processing error:', error);
+            this.showMessage('Error processing query: ' + error.message, 'error');
         } finally {
             this.showLoading(false);
+            this.isProcessing = false;
         }
-    }
-
-    // Enhanced method to execute structured queries with better operation handling
-    async executeStructuredQuery(queryStructure, originalQuery) {
-        const { queryType, targetColumns, operation, visualization } = queryStructure;
-        
-        try {
-            let result = null;
-            
-            switch (queryType) {
-                case 'aggregation':
-                    result = this.performAggregation(operation, targetColumns[0]);
-                    break;
-                case 'groupby':
-                    // Enhanced groupby with operation support
-                    if (targetColumns.length >= 2) {
-                        result = this.performGroupByWithOperation(targetColumns[0], targetColumns[1], operation);
-                    } else {
-                        result = this.performGroupBy(targetColumns[0]);
-                    }
-                    break;
-                case 'filter':
-                    result = this.performFilter(targetColumns, queryStructure.filterConditions);
-                    break;
-                case 'correlation':
-                    if (targetColumns.length >= 2) {
-                        result = this.performCorrelation(targetColumns[0], targetColumns[1]);
-                    }
-                    break;
-                case 'distribution':
-                    result = this.performDistribution(targetColumns[0]);
-                    break;
-                case 'trend':
-                    result = this.performTrend(targetColumns);
-                    break;
-                default:
-                    result = this.performDisplay(targetColumns[0]);
-            }
-            
-            if (result) {
-                result.queryStructure = queryStructure;
-                result.originalQuery = originalQuery;
-                // Intelligently select chart type
-                result.chartType = this.selectIntelligentChartType(result, queryStructure);
-            }
-            
-            return result;
-        } catch (error) {
-            console.error('Error executing structured query:', error);
-            return null;
-        }
-    }
-
-    // New method for groupby with operations (avg, sum, count, etc.)
-    performGroupByWithOperation(groupColumn, valueColumn, operation = 'count') {
-        if (!this.csvData || !groupColumn) return null;
-        
-        const groups = {};
-        
-        // Group the data
-        this.csvData.forEach(row => {
-            const groupKey = row[groupColumn];
-            if (!groupKey) return;
-            
-            if (!groups[groupKey]) {
-                groups[groupKey] = [];
-            }
-            groups[groupKey].push(row);
-        });
-        
-        // Apply operation
-        const result = Object.entries(groups).map(([groupKey, rows]) => {
-            let value;
-            
-            switch (operation.toLowerCase()) {
-                case 'avg':
-                case 'average':
-                    if (valueColumn) {
-                        const values = rows.map(row => parseFloat(row[valueColumn])).filter(val => !isNaN(val));
-                        value = values.length > 0 ? values.reduce((sum, val) => sum + val, 0) / values.length : 0;
-                    } else {
-                        value = rows.length;
-                    }
-                    break;
-                case 'sum':
-                    if (valueColumn) {
-                        const values = rows.map(row => parseFloat(row[valueColumn])).filter(val => !isNaN(val));
-                        value = values.reduce((sum, val) => sum + val, 0);
-                    } else {
-                        value = rows.length;
-                    }
-                    break;
-                case 'max':
-                    if (valueColumn) {
-                        const values = rows.map(row => parseFloat(row[valueColumn])).filter(val => !isNaN(val));
-                        value = values.length > 0 ? Math.max(...values) : 0;
-                    } else {
-                        value = rows.length;
-                    }
-                    break;
-                case 'min':
-                    if (valueColumn) {
-                        const values = rows.map(row => parseFloat(row[valueColumn])).filter(val => !isNaN(val));
-                        value = values.length > 0 ? Math.min(...values) : 0;
-                    } else {
-                        value = rows.length;
-                    }
-                    break;
-                case 'count':
-                default:
-                    value = rows.length;
-                    break;
-            }
-            
-            return {
-                [groupColumn]: groupKey,
-                [valueColumn ? `${operation}_${valueColumn}` : 'count']: value
-            };
-        });
-        
-        // Sort by value descending
-        result.sort((a, b) => {
-            const aVal = Object.values(a)[1];
-            const bVal = Object.values(b)[1];
-            return bVal - aVal;
-        });
-        
-        return {
-            type: 'groupby',
-            data: result,
-            columns: [groupColumn, valueColumn ? `${operation}_${valueColumn}` : 'count'],
-            summary: `Grouped ${this.csvData.length} records by ${groupColumn} with ${operation} operation`
-        };
-    }
-
-    // Intelligent chart type selection (alias for compatibility)
-    selectIntelligentChartType(result, queryStructure) {
-        return this.selectOptimalChartType(result, queryStructure);
-    }
-
-    // Intelligent chart type selection
-    selectOptimalChartType(result, queryStructure) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        
-        // Use detailed column analysis if available
-        const columnAnalysis = this.dataStructure?.detailedColumnAnalysis || {};
-        
-        const numericColumns = columns.filter(col => 
-            columnAnalysis[col]?.type === 'numeric' || 
-            this.isNumericColumn(col, data)
-        );
-        
-        const categoricalColumns = columns.filter(col => 
-            columnAnalysis[col]?.type === 'categorical' || 
-            this.isCategoricalColumn(col, data)
-        );
-
-        const dateColumns = columns.filter(col => 
-            columnAnalysis[col]?.type === 'date' || 
-            this.isDateColumn(col, data)
-        );
-
-        // Decision tree for chart selection
-        if (result.type === 'correlation' && numericColumns.length >= 2) {
-            return 'scatter';
-        }
-        
-        if (result.type === 'distribution') {
-            return numericColumns.length > 0 ? 'histogram' : 'bar';
-        }
-
-        if (result.type === 'trend' && dateColumns.length > 0) {
-            return 'line';
-        }
-        
-        if (result.type === 'group' || categoricalColumns.length > 0) {
-            const uniqueCategories = [...new Set(data.map(row => row[categoricalColumns[0]]))].length;
-            if (uniqueCategories <= 6) {
-                return uniqueCategories <= 4 ? 'pie' : 'doughnut';
-            } else {
-                return 'bar';
-            }
-        }
-        
-        if (numericColumns.length === 2) {
-            return 'scatter';
-        }
-        
-        if (numericColumns.length === 1 && categoricalColumns.length >= 1) {
-            return 'bar';
-        }
-        
-        if (dateColumns.length > 0 && numericColumns.length > 0) {
-            return 'line';
-        }
-
-        // Default fallback
-        return 'bar';
-    }
-    
-    // Enhanced Bar Chart Configuration
-    getEnhancedBarConfig(result, xAxis = null, yAxis = null) {
-        const data = result.data;
-        if (!data || !Array.isArray(data) || data.length === 0) {
-            return null;
-        }
-
-        const columns = Object.keys(data[0] || {});
-        if (columns.length === 0) {
-            return null;
-        }
-        
-        // Use AI-suggested axes or find the best columns
-        const categoricalCol = xAxis || this.findBestCategoricalColumn(columns, data) || columns[0];
-        const numericCol = yAxis || this.findBestNumericColumn(columns, data);
-        
-        // Prepare data based on suggested or detected columns
-        let chartData, labels;
-        
-        if (result.type === 'group' || result.type === 'groupby') {
-            if (result.groups) {
-                labels = Object.keys(result.groups);
-                chartData = labels.map(label => (result.groups[label] || []).length);
-            } else {
-                // Fallback: group by first categorical column
-                const grouped = this.groupAndAggregate(data, categoricalCol, numericCol || 'count', 'count');
-                labels = Object.keys(grouped);
-                chartData = Object.values(grouped);
-            }
-        } else if (result.type === 'aggregate' && result.result !== undefined) {
-            // Single aggregate result
-            labels = [result.column || 'Result'];
-            chartData = [result.result];
-        } else if (categoricalCol && numericCol) {
-            // Group by categorical column and aggregate numeric column
-            const grouped = this.groupAndAggregate(data, categoricalCol, numericCol);
-            labels = Object.keys(grouped).slice(0, 15); // Limit to 15 categories for readability
-            chartData = labels.map(key => grouped[key]);
-        } else if (numericCol) {
-            // Create histogram-like bars for numeric data
-            const bins = this.createBins(data, numericCol, 8);
-            labels = bins.map(bin => `${bin.min.toFixed(1)}-${bin.max.toFixed(1)}`);
-            chartData = bins.map(bin => bin.count);
-        } else {
-            // Fallback: count occurrences of first column
-            const counts = this.countOccurrences(data, categoricalCol);
-            const sortedEntries = Object.entries(counts)
-                .sort(([,a], [,b]) => b - a)
-                .slice(0, 10); // Limit to top 10
-            labels = sortedEntries.map(([key]) => key);
-            chartData = sortedEntries.map(([,value]) => value);
-        }
-
-        // Ensure we have valid data
-        if (!labels || !chartData || labels.length === 0 || chartData.length === 0) {
-            return null;
-        }
-
-        return {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: numericCol || result.operation || 'Count',
-                    data: chartData,
-                    backgroundColor: this.generateColors(labels.length, 0.7),
-                    borderColor: this.generateColors(labels.length, 1),
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    borderSkipped: false,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: this.generateChartTitle(result, categoricalCol, numericCol),
-                        font: { size: 16, weight: 'bold' }
-                    },
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => {
-                                const value = typeof context.parsed.y === 'number' ? 
-                                    context.parsed.y.toLocaleString() : context.parsed.y;
-                                return `${context.dataset.label}: ${value}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: categoricalCol || 'Categories',
-                            font: { weight: 'bold' }
-                        },
-                        ticks: {
-                            maxRotation: 45,
-                            minRotation: 0
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: numericCol || result.operation || 'Count',
-                            font: { weight: 'bold' }
-                        },
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    // Enhanced Line Chart Configuration
-    getEnhancedLineConfig(result, xAxis = null, yAxis = null) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        
-        // Use AI-suggested axes or auto-detect
-        const xCol = xAxis || this.findBestDateColumn(columns, data) || columns[0];
-        const yCol = yAxis || this.findBestNumericColumn(columns, data);
-        
-        if (!yCol) {
-            return this.getEnhancedBarConfig(result, xAxis, yAxis); // Fallback
-        }
-        
-        let labels, datasets;
-        
-        // Check if x-axis is date/time
-        const isDateCol = this.isDateColumn(xCol, data);
-        
-        if (isDateCol) {
-            // Time series data
-            const sortedData = [...data].sort((a, b) => new Date(a[xCol]) - new Date(b[xCol]));
-            labels = sortedData.map(row => new Date(row[xCol]).toLocaleDateString());
-            
-            datasets = [{
-                label: yCol,
-                data: sortedData.map(row => parseFloat(row[yCol]) || 0),
-                borderColor: this.getColorPalette()[0],
-                backgroundColor: this.getColorPalette()[0] + '20',
-                fill: false,
-                tension: 0.1,
-                pointRadius: 3,
-                pointHoverRadius: 5
-            }];
-        } else {
-            // Categorical or sequential data
-            labels = data.map(row => row[xCol]);
-            datasets = [{
-                label: yCol,
-                data: data.map(row => parseFloat(row[yCol]) || 0),
-                borderColor: this.getColorPalette()[0],
-                backgroundColor: this.getColorPalette()[0] + '20',
-                fill: false,
-                tension: 0.1,
-                pointRadius: 3,
-                pointHoverRadius: 5
-            }];
-        }
-                
-        return {
-            type: 'line',
-            data: { labels, datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: this.generateChartTitle(result, xCol, yCol)
-                    },
-                    legend: {
-                        display: false
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                            text: xCol
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                            text: yCol
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                                }
-                            }
-                        }
-                    }
-                };
-    }
-
-    // Enhanced Histogram Configuration
-    getEnhancedHistogramConfig(result) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        const numericCol = this.findBestNumericColumn(columns, data);
-        
-        if (!numericCol) {
-            return this.getEnhancedBarConfig(result); // Fallback
-        }
-        
-        const values = data.map(row => parseFloat(row[numericCol])).filter(val => !isNaN(val));
-        const bins = this.createHistogramBins(values, 10);
-        
-        const labels = bins.map(bin => `${bin.min.toFixed(1)}-${bin.max.toFixed(1)}`);
-        const chartData = bins.map(bin => bin.count);
-
-                return {
-                    type: 'bar',
-                    data: {
-                labels: labels,
-                        datasets: [{
-                    label: 'Frequency',
-                    data: chartData,
-                    backgroundColor: this.getColorPalette()[0] + '80',
-                    borderColor: this.getColorPalette()[0],
-                    borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                        text: `Distribution of ${numericCol}`
-                    },
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Frequency'
-                        }
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: numericCol
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    // Enhanced Pie Chart Configuration
-    getEnhancedPieConfig(result) {
-        const data = result.data;
-        
-        let labels, chartData;
-        
-        if (result.type === 'group') {
-            labels = Object.keys(result.groups || {});
-            chartData = labels.map(label => (result.groups[label] || []).length);
-        } else {
-            const columns = Object.keys(data[0] || {});
-            const categoricalCol = this.findBestCategoricalColumn(columns, data);
-            const numericCol = this.findBestNumericColumn(columns, data);
-            
-            if (categoricalCol) {
-                if (numericCol) {
-                    const grouped = this.groupAndAggregate(data, categoricalCol, numericCol);
-                    labels = Object.keys(grouped);
-                    chartData = Object.values(grouped);
-                } else {
-                    const counts = this.countOccurrences(data, categoricalCol);
-                    labels = Object.keys(counts);
-                    chartData = Object.values(counts);
-                }
-            } else {
-                return null; // No suitable data for pie chart
-            }
-        }
-        
-        // Limit to top 8 categories for readability
-        if (labels.length > 8) {
-            const combined = labels.map((label, index) => ({ label, value: chartData[index] }))
-                .sort((a, b) => b.value - a.value);
-            
-            const top7 = combined.slice(0, 7);
-            const others = combined.slice(7).reduce((sum, item) => sum + item.value, 0);
-            
-            labels = [...top7.map(item => item.label), 'Others'];
-            chartData = [...top7.map(item => item.value), others];
-        }
-
-        return {
-            type: 'pie',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: chartData,
-                    backgroundColor: this.generateColors(labels.length, 0.8),
-                    borderColor: this.generateColors(labels.length, 1),
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: this.generateChartTitle(result)
-                    },
-                    legend: {
-                        position: 'right',
-                        labels: {
-                            boxWidth: 12,
-                            padding: 15
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => {
-                                const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
-                                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                return `${context.label}: ${context.parsed.toLocaleString()} (${percentage}%)`;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    // Enhanced Scatter Plot Configuration
-    getEnhancedScatterConfig(result, xAxis = null, yAxis = null) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        const numericCols = this.findAllNumericColumns(columns, data);
-        
-        if (numericCols.length < 2) {
-            return this.getEnhancedBarConfig(result); // Fallback
-        }
-        
-        // Use AI-suggested axes or auto-detect
-        const xCol = xAxis || numericCols[0];
-        const yCol = yAxis || numericCols[1];
-        const sizeCol = numericCols[2]; // Optional third dimension
-        
-        const scatterData = data.map(row => {
-            const point = {
-                x: parseFloat(row[xCol]) || 0,
-                y: parseFloat(row[yCol]) || 0
-            };
-            
-            if (sizeCol) {
-                point.r = Math.max(3, Math.min(20, (parseFloat(row[sizeCol]) || 1) / 10));
-            }
-            
-            return point;
-        });
-
-        return {
-            type: sizeCol ? 'bubble' : 'scatter',
-            data: {
-                datasets: [{
-                    label: `${yCol} vs ${xCol}`,
-                    data: scatterData,
-                    backgroundColor: this.getColorPalette()[0] + '60',
-                    borderColor: this.getColorPalette()[0],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: `${yCol} vs ${xCol}`
-                    },
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: xCol
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: yCol
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    // Update chart with intelligent chart selection
-    updateChart(result, query, aiSuggestions = null) {
-        const chartContainer = document.getElementById('chartContainer');
-        if (!chartContainer) {
-            console.error('Chart container not found');
-            return;
-        }
-
-        // Destroy existing chart if it exists
-        if (this.currentChart) {
-            this.currentChart.destroy();
-            this.currentChart = null;
-        }
-
-        // Clear container and create canvas
-        chartContainer.innerHTML = '';
-        const canvas = document.createElement('canvas');
-        canvas.id = 'dataChart';
-        canvas.style.maxHeight = '400px';
-        chartContainer.appendChild(canvas);
-
-        // Get chart configuration based on type
-        let chartConfig = null;
-        const chartType = result.chartType || this.selectOptimalChartType(result);
-
-        // Use AI suggestions if available
-        const xAxis = aiSuggestions?.xAxis;
-        const yAxis = aiSuggestions?.yAxis;
-
-        console.log('Creating chart of type:', chartType, 'for result:', result);
-
-        try {
-            switch (chartType) {
-                case 'bar':
-                    chartConfig = this.getEnhancedBarConfig(result, xAxis, yAxis);
-                    break;
-                case 'line':
-                    chartConfig = this.getEnhancedLineConfig(result, xAxis, yAxis);
-                    break;
-                case 'pie':
-                    chartConfig = this.getEnhancedPieConfig(result);
-                    break;
-                case 'doughnut':
-                    chartConfig = this.getEnhancedDoughnutConfig(result);
-                    break;
-                case 'scatter':
-                    chartConfig = this.getEnhancedScatterConfig(result, xAxis, yAxis);
-                    break;
-                case 'histogram':
-                    chartConfig = this.getEnhancedHistogramConfig(result);
-                    break;
-                case 'area':
-                    chartConfig = this.getEnhancedAreaConfig(result, xAxis, yAxis);
-                    break;
-                case 'radar':
-                    chartConfig = this.getEnhancedRadarConfig(result);
-                    break;
-                case 'polarArea':
-                    chartConfig = this.getEnhancedPolarAreaConfig(result);
-                    break;
-                case 'bubble':
-                    chartConfig = this.getEnhancedBubbleConfig(result);
-                    break;
-                default:
-                    chartConfig = this.getEnhancedBarConfig(result, xAxis, yAxis);
-            }
-
-            // If no chart config was generated, create a minimal fallback chart
-            if (!chartConfig) {
-                chartConfig = this.createMinimalFallbackChart(result);
-            }
-
-            if (chartConfig) {
-                const ctx = canvas.getContext('2d');
-                this.currentChart = new Chart(ctx, chartConfig);
-                this.updateChartInfo(result, query);
-                console.log('Chart created successfully');
-            } else {
-                this.displayNoChartMessage(result, query);
-            }
-        } catch (error) {
-            console.error('Error creating chart:', error);
-            // Try to create a simple fallback chart
-            try {
-                const fallbackConfig = this.createMinimalFallbackChart(result);
-                if (fallbackConfig) {
-                    const ctx = canvas.getContext('2d');
-                    this.currentChart = new Chart(ctx, fallbackConfig);
-                    this.updateChartInfo(result, query);
-                } else {
-                    this.displayNoChartMessage(result, query);
-                }
-            } catch (fallbackError) {
-                console.error('Fallback chart creation failed:', fallbackError);
-                this.displayNoChartMessage(result, query);
-            }
-        }
-    }
-
-    // New method to create minimal fallback charts
-    createMinimalFallbackChart(result) {
-        const data = result.data;
-        if (!data || !Array.isArray(data) || data.length === 0) {
-            return null;
-        }
-
-        const columns = Object.keys(data[0] || {});
-        if (columns.length === 0) {
-            return null;
-        }
-
-        // Create a simple bar chart showing data counts or first numeric column
-        const numericColumns = columns.filter(col => this.isNumericColumn(col, data));
-        const categoricalColumns = columns.filter(col => this.isCategoricalColumn(col, data));
-
-        let labels = [];
-        let chartData = [];
-        let label = 'Count';
-
-        if (result.type === 'aggregate' && result.result !== undefined) {
-            // Single value result
-            labels = [result.column || 'Result'];
-            chartData = [result.result];
-            label = result.operation || 'Value';
-        } else if (categoricalColumns.length > 0) {
-            // Group by first categorical column
-            const groupCol = categoricalColumns[0];
-            const counts = this.countOccurrences(data, groupCol);
-            labels = Object.keys(counts).slice(0, 10); // Limit to 10 categories
-            chartData = labels.map(key => counts[key]);
-            label = 'Count';
-        } else if (numericColumns.length > 0) {
-            // Show distribution of first numeric column
-            const numCol = numericColumns[0];
-            const values = data.map(row => parseFloat(row[numCol])).filter(val => !isNaN(val));
-            if (values.length > 0) {
-                const bins = this.createHistogramBins(values, 8);
-                labels = bins.map(bin => `${bin.min.toFixed(1)}-${bin.max.toFixed(1)}`);
-                chartData = bins.map(bin => bin.count);
-                label = 'Frequency';
-            }
-        } else {
-            // Last resort: show row indices
-            labels = data.slice(0, 10).map((_, index) => `Row ${index + 1}`);
-            chartData = data.slice(0, 10).map(() => 1);
-            label = 'Records';
-        }
-
-        if (labels.length === 0 || chartData.length === 0) {
-            return null;
-        }
-
-        return {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: label,
-                    data: chartData,
-                    backgroundColor: this.generateColors(labels.length, 0.7),
-                    borderColor: this.generateColors(labels.length, 1),
-                    borderWidth: 1,
-                    borderRadius: 4,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: result.summary || 'Data Visualization'
-                    },
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    // New method to display message when no chart can be created
-    displayNoChartMessage(result, query) {
-        const chartContainer = document.getElementById('chartContainer');
-        if (!chartContainer) return;
-
-        const messageHtml = `
-            <div class="no-chart-message">
-                <div class="no-chart-icon">📊</div>
-                <h4>Visualization Not Available</h4>
-                <p>Unable to create a chart for this query, but your results are available in the Table and Summary tabs.</p>
-                <div class="result-summary">
-                    <strong>Query:</strong> "${query}"<br>
-                    <strong>Result:</strong> ${result.summary || 'Analysis completed successfully'}
-                </div>
-            </div>
-        `;
-
-        chartContainer.innerHTML = messageHtml;
-        this.updateChartInfo(result, query);
-    }
-
-    // Enhanced chart generation with intelligent chart selection
-    updateChartInfo(result, query) {
-        const chartInfo = document.getElementById('chartInfo');
-        if (!chartInfo) return;
-        
-        let infoText = `Query: "${query}"<br>`;
-        
-        switch (result.type) {
-            case 'aggregate':
-                infoText += `Calculated ${result.operation} of ${result.column}: ${result.result.toFixed(2)}`;
-                break;
-            case 'sort':
-                infoText += `Showing top ${result.count} items sorted by ${result.column}`;
-                break;
-            case 'group':
-                infoText += `Data grouped by ${result.column} showing ${result.data.length} categories`;
-                break;
-            case 'correlation':
-                infoText += `Scatter plot showing relationship between ${result.col1} and ${result.col2}`;
-                break;
-            default:
-                infoText += 'Data visualization generated based on your query';
-        }
-        
-        chartInfo.innerHTML = infoText;
-    }
-    
-    updateQueryHistory() {
-        const historyList = document.getElementById('historyList');
-        if (!historyList) return;
-        
-        const recentQueries = this.queryHistory.slice(0, 5);
-        
-        // Clear existing content
-        historyList.innerHTML = '';
-        
-        // Create history items with proper event listeners
-        recentQueries.forEach(query => {
-            const historyItem = document.createElement('div');
-            historyItem.className = 'history-item';
-            historyItem.textContent = query;
-            historyItem.addEventListener('click', () => {
-                this.fillQuery(query);
-            });
-            historyList.appendChild(historyItem);
-        });
-    }
-    
-    switchTab(tab) {
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-        
-        const tabBtn = document.querySelector(`[data-tab="${tab}"]`);
-        const tabContent = document.getElementById(`${tab}Tab`);
-        
-        if (tabBtn) tabBtn.classList.add('active');
-        if (tabContent) tabContent.classList.add('active');
-    }
-    
-    searchTable(searchTerm) {
-        if (!this.csvData) return;
-        
-        const filteredData = this.csvData.filter(row => 
-            Object.values(row).some(value => 
-                value && value.toString().toLowerCase().includes(searchTerm.toLowerCase())
-            )
-        );
-        
-        this.currentPage = 1;
-        this.updateTable(filteredData);
-    }
-    
-    exportData() {
-        if (!this.filteredData && !this.csvData) return;
-        
-        const dataToExport = this.filteredData || this.csvData;
-        const csv = Papa.unparse(dataToExport);
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'filtered_data.csv';
-        a.click();
-        window.URL.revokeObjectURL(url);
-    }
-    
-    showLoading(show, text = 'Processing your query...') {
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const loadingText = document.getElementById('loadingText');
-        if (loadingOverlay) {
-            loadingOverlay.style.display = show ? 'flex' : 'none';
-        }
-        if (loadingText && text) {
-            loadingText.textContent = text;
-        }
-    }
-    
-    showMessage(message, type = 'info') {
-        const messageToast = document.getElementById('messageToast');
-        const messageText = document.getElementById('messageText');
-        
-        if (messageToast && messageText) {
-            messageText.textContent = message;
-            messageToast.className = `message-toast ${type}`;
-            messageToast.style.display = 'block';
-            
-            // Add show class for animation
-            setTimeout(() => {
-                messageToast.classList.add('show');
-            }, 10);
-            
-            // Auto-hide after 5 seconds
-            setTimeout(() => {
-                messageToast.classList.remove('show');
-                setTimeout(() => {
-                    messageToast.style.display = 'none';
-                }, 300);
-            }, 5000);
-        }
-    }
-    
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    setupChatInterface() {
-        const chatButton = document.createElement('button');
-        chatButton.className = 'chat-button';
-        chatButton.innerHTML = '💬';
-        chatButton.onclick = () => this.toggleChat();
-        document.body.appendChild(chatButton);
-
-        const chatContainer = document.createElement('div');
-        chatContainer.className = 'chat-container';
-        chatContainer.style.display = 'none';
-        chatContainer.innerHTML = `
-            <div class="chat-header">
-                <h3>AI Assistant</h3>
-                <button class="close-chat">×</button>
-            </div>
-            <div class="chat-messages"></div>
-            <div class="chat-input-container">
-                <textarea class="chat-input" placeholder="Ask about your data..."></textarea>
-                <button class="send-message">Send</button>
-            </div>
-        `;
-        document.body.appendChild(chatContainer);
-
-        // Chat event listeners
-        const closeButton = chatContainer.querySelector('.close-chat');
-        const sendButton = chatContainer.querySelector('.send-message');
-        const chatInput = chatContainer.querySelector('.chat-input');
-
-        closeButton.onclick = () => this.toggleChat();
-        sendButton.onclick = () => this.sendChatMessage();
-        chatInput.onkeypress = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.sendChatMessage();
-            }
-        };
-    }
-
-    toggleChat() {
-        const chatContainer = document.querySelector('.chat-container');
-        this.isChatOpen = !this.isChatOpen;
-        chatContainer.style.display = this.isChatOpen ? 'flex' : 'none';
-    }
-
-    async sendChatMessage() {
-        const chatInput = document.querySelector('.chat-input');
-        const message = chatInput.value.trim();
-        if (!message) return;
-
-        const chatMessages = document.querySelector('.chat-messages');
-        
-        // Add user message
-        this.addChatMessage('user', message);
-        chatInput.value = '';
-
-        if (!this.csvData) {
-            this.addChatMessage('assistant', 'Please upload a CSV file first to analyze the data.');
-            return;
-        }
-
-        try {
-            this.showLoading(true);
-            const { analysis, success } = await this.aiService.analyzeData(this.csvData, message);
-            
-            if (success) {
-                this.addChatMessage('assistant', analysis);
-                
-                // Process the query to generate visualization
-                const result = await this.processQueryForVisualization(message, analysis);
-                if (result) {
-                    this.displayResults(result, message);
-                    this.addChatMessage('assistant', '📊 I\'ve generated a visualization based on your question. Check the main dashboard!');
-                }
-            } else {
-                this.addChatMessage('assistant', 'Sorry, I encountered an error analyzing your data. Please try again.');
-            }
-        } catch (error) {
-            console.error('Chat Error:', error);
-            this.addChatMessage('assistant', 'Sorry, something went wrong. Please try again.');
-        } finally {
-            this.showLoading(false);
-        }
-    }
-
-    async processQueryForVisualization(query, analysis) {
-        try {
-            // Try to extract meaningful data for visualization
-            const columns = Object.keys(this.csvData[0]);
-            let result = null;
-
-            // Check if query is about specific columns
-            const numericColumns = columns.filter(col => {
-                const sampleValues = this.csvData.slice(0, 10).map(row => row[col]).filter(val => val && !isNaN(parseFloat(val)));
-                return sampleValues.length > 5;
-            });
-
-            const categoricalColumns = columns.filter(col => {
-                const uniqueValues = [...new Set(this.csvData.slice(0, 50).map(row => row[col]))];
-                return uniqueValues.length < 20 && uniqueValues.length > 1;
-            });
-
-            // Determine chart type based on query content
-            let chartType = 'bar';
-            if (query.toLowerCase().includes('trend') || query.toLowerCase().includes('over time')) {
-                chartType = 'line';
-            } else if (query.toLowerCase().includes('correlation') || query.toLowerCase().includes('relationship')) {
-                chartType = 'scatter';
-            } else if (query.toLowerCase().includes('distribution') || query.toLowerCase().includes('proportion')) {
-                chartType = 'pie';
-            }
-
-            // Generate appropriate visualization data
-            if (categoricalColumns.length > 0 && numericColumns.length > 0) {
-                const categoryCol = categoricalColumns[0];
-                const numericCol = numericColumns[0];
-                
-                // Group data by category and calculate averages
-                const groupedData = {};
-                this.csvData.forEach(row => {
-                    const category = row[categoryCol];
-                    const value = parseFloat(row[numericCol]);
-                    if (category && !isNaN(value)) {
-                        if (!groupedData[category]) {
-                            groupedData[category] = { sum: 0, count: 0 };
-                        }
-                        groupedData[category].sum += value;
-                        groupedData[category].count += 1;
-                    }
-                });
-
-                const chartData = Object.keys(groupedData).map(category => ({
-                    [categoryCol]: category,
-                    [numericCol]: (groupedData[category].sum / groupedData[category].count).toFixed(2)
-                }));
-
-                result = {
-                    type: 'ai_analysis',
-                    query: query,
-                    analysis: analysis,
-                    data: chartData,
-                    chartType: chartType,
-                    columns: [categoryCol, numericCol]
-                };
-            } else if (numericColumns.length >= 2) {
-                // Use first two numeric columns for scatter plot
-                const data = this.csvData.slice(0, 100).map(row => ({
-                    [numericColumns[0]]: parseFloat(row[numericColumns[0]]) || 0,
-                    [numericColumns[1]]: parseFloat(row[numericColumns[1]]) || 0
-                }));
-
-                result = {
-                    type: 'ai_analysis',
-                    query: query,
-                    analysis: analysis,
-                    data: data,
-                    chartType: 'scatter',
-                    columns: numericColumns.slice(0, 2)
-                };
-            }
-
-            return result;
-        } catch (error) {
-            console.error('Visualization processing error:', error);
-            return null;
-        }
-    }
-
-    addChatMessage(role, content) {
-        const chatMessages = document.querySelector('.chat-messages');
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `chat-message ${role}-message`;
-        messageDiv.innerHTML = `
-            <div class="message-content">${content}</div>
-            <div class="message-time">${new Date().toLocaleTimeString()}</div>
-        `;
-        chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        this.chatHistory.push({ role, content });
-    }
-
-    handleChatVisualization(analysis) {
-        // Extract visualization type from analysis
-        const visualizationMatch = analysis.match(/visualization:?\s*([^\.]+)/i);
-        if (visualizationMatch) {
-            const vizType = visualizationMatch[1].toLowerCase();
-            let chartType = 'bar';
-            
-            if (vizType.includes('line')) chartType = 'line';
-            else if (vizType.includes('pie')) chartType = 'pie';
-            else if (vizType.includes('scatter')) chartType = 'scatter';
-            
-            // Try to extract relevant data columns
-            const columns = Object.keys(this.csvData[0]);
-            if (columns.length >= 2) {
-                const result = {
-                    type: chartType,
-                    data: this.csvData.slice(0, 10),
-                    columns: columns.slice(0, 2)
-                };
-                this.displayResults(result, 'Visualization from chat');
-            }
-        }
-    }
-
-    // Enhanced method for aggregation with better error handling
-    performAggregation(operation, column) {
-        console.log('Performing aggregation:', operation, 'on column:', column);
-        
-        if (!this.csvData.some(row => row.hasOwnProperty(column))) {
-            throw new Error(`Column "${column}" not found in data`);
-        }
-        
-        const numericData = this.csvData
-            .map(row => parseFloat(row[column]))
-            .filter(val => !isNaN(val));
-            
-        if (numericData.length === 0) {
-            throw new Error(`Column "${column}" does not contain numeric data`);
-        }
-        
-        let result;
-        switch (operation) {
-            case 'mean':
-            case 'avg':
-                result = numericData.reduce((sum, val) => sum + val, 0) / numericData.length;
-                break;
-            case 'sum':
-                result = numericData.reduce((sum, val) => sum + val, 0);
-                break;
-            case 'max':
-                result = Math.max(...numericData);
-                break;
-            case 'min':
-                result = Math.min(...numericData);
-                break;
-            case 'count':
-                result = this.csvData.length;
-                break;
-            default:
-                result = numericData.reduce((sum, val) => sum + val, 0) / numericData.length;
-        }
-        
-        return {
-            type: 'aggregate',
-            operation: operation,
-            column: column,
-            result: result,
-            data: this.csvData,
-            chartType: 'bar',
-            summary: `${operation.toUpperCase()} of ${column}: ${result.toFixed(2)}`
-        };
-    }
-
-    // Enhanced method for grouping
-    performGroupBy(column) {
-        console.log('Performing group by:', column);
-        
-        const groups = this.csvData.reduce((acc, row) => {
-            const key = row[column] || 'Unknown';
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(row);
-            return acc;
-        }, {});
-        
-        const groupData = Object.entries(groups).map(([key, rows]) => ({
-            group: key,
-            count: rows.length,
-            data: rows
-        }));
-        
-        return {
-            type: 'group',
-            column: column,
-            groups: groups,
-            data: groupData,
-            chartType: 'pie',
-            summary: `Grouped by ${column}: ${Object.keys(groups).length} unique groups`
-        };
-    }
-
-    // Enhanced method for correlation
-    performCorrelation(col1, col2) {
-        console.log('Performing correlation:', col1, 'vs', col2);
-        
-        const data = this.csvData
-            .map(row => ({
-                x: parseFloat(row[col1]),
-                y: parseFloat(row[col2]),
-                label: row[col1] + ' vs ' + row[col2]
-            }))
-            .filter(point => !isNaN(point.x) && !isNaN(point.y));
-            
-        if (data.length === 0) {
-            throw new Error('No numeric data found for correlation');
-        }
-        
-        return {
-            type: 'correlation',
-            col1: col1,
-            col2: col2,
-            data: data,
-            originalData: this.csvData,
-            chartType: 'scatter',
-            summary: `Correlation between ${col1} and ${col2}: ${data.length} data points`
-        };
-    }
-
-    // Enhanced method for display
-    performDisplay(column) {
-        console.log('Performing display for column:', column);
-        
-        return {
-            type: 'display',
-            column: column,
-            data: this.csvData,
-            chartType: this.getColumnType(column) === 'numeric' ? 'histogram' : 'bar',
-            summary: `Displaying ${column} data: ${this.csvData.length} records`
-        };
-    }
-
-    // Enhanced method for parsing queries (fallback)
-    parseQuery(query) {
-        const columns = Object.keys(this.csvData[0] || {});
-        console.log('Available columns:', columns);
-        console.log('Parsing query:', query);
-        
-        const lowerQuery = query.toLowerCase();
-        
-        // Find mentioned columns in the query
-        const mentionedColumns = columns.filter(col => 
-            lowerQuery.includes(col.toLowerCase())
-        );
-        
-        // Numeric and categorical column detection
-        const numericColumns = columns.filter(col => this.isNumericColumn(col, this.csvData));
-        const categoricalColumns = columns.filter(col => this.isCategoricalColumn(col, this.csvData));
-        
-        console.log('Mentioned columns:', mentionedColumns);
-        console.log('Numeric columns:', numericColumns);
-        console.log('Categorical columns:', categoricalColumns);
-        
-        // Dynamic pattern matching
-        if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
-            const targetColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0];
-            if (targetColumn) {
-                return this.performAggregation('mean', targetColumn);
-            }
-        }
-        
-        if (lowerQuery.includes('sum') && (lowerQuery.includes('total') || mentionedColumns.length > 0)) {
-            const targetColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0];
-            if (targetColumn) {
-                return this.performAggregation('sum', targetColumn);
-            }
-        }
-        
-        if (lowerQuery.includes('count')) {
-            if (mentionedColumns.length > 0) {
-                return this.performAggregation('count', mentionedColumns[0]);
-            } else {
-                return this.performAggregation('count', columns[0]);
-            }
-        }
-        
-        if ((lowerQuery.includes('top') || lowerQuery.includes('highest')) && /\d+/.test(lowerQuery)) {
-            const countMatch = lowerQuery.match(/\d+/);
-            const count = countMatch ? parseInt(countMatch[0]) : 10;
-            const targetColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0] || columns[0];
-            return this.performSort('desc', targetColumn, count);
-        }
-        
-        if ((lowerQuery.includes('bottom') || lowerQuery.includes('lowest')) && /\d+/.test(lowerQuery)) {
-            const countMatch = lowerQuery.match(/\d+/);
-            const count = countMatch ? parseInt(countMatch[0]) : 10;
-            const targetColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0] || columns[0];
-            return this.performSort('asc', targetColumn, count);
-        }
-        
-        if (lowerQuery.includes('group') || (lowerQuery.includes('by') && mentionedColumns.length > 0)) {
-            const groupColumn = mentionedColumns.find(col => categoricalColumns.includes(col)) || categoricalColumns[0];
-            if (groupColumn) {
-                if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
-                    const valueColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0];
-                    if (valueColumn && valueColumn !== groupColumn) {
-                        return this.performGroupByWithOperation(groupColumn, valueColumn, 'mean');
-                    }
-                }
-                return this.performGroupBy(groupColumn);
-            }
-        }
-        
-        if (lowerQuery.includes('correlation') || lowerQuery.includes('relationship')) {
-            const numericMentioned = mentionedColumns.filter(col => numericColumns.includes(col));
-            if (numericMentioned.length >= 2) {
-                return this.performCorrelation(numericMentioned[0], numericMentioned[1]);
-            } else if (numericColumns.length >= 2) {
-                return this.performCorrelation(numericColumns[0], numericColumns[1]);
-            }
-        }
-        
-        if (lowerQuery.includes('distribution') || lowerQuery.includes('spread')) {
-            const targetColumn = mentionedColumns[0] || columns[0];
-            return this.performDistribution(targetColumn);
-        }
-        
-        if (lowerQuery.includes('maximum') || lowerQuery.includes('max')) {
-            const targetColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0];
-            if (targetColumn) {
-                return this.performAggregation('max', targetColumn);
-            }
-        }
-        
-        if (lowerQuery.includes('minimum') || lowerQuery.includes('min')) {
-            const targetColumn = mentionedColumns.find(col => numericColumns.includes(col)) || numericColumns[0];
-            if (targetColumn) {
-                return this.performAggregation('min', targetColumn);
-            }
-        }
-        
-        if (lowerQuery.includes('show') || lowerQuery.includes('display')) {
-            if (mentionedColumns.length > 0) {
-                return this.performDisplay(mentionedColumns[0]);
-            }
-        }
-        
-        // Check for specific patterns (fallback to original patterns)
-        for (const pattern of this.queryPatterns) {
-            if (pattern.pattern.test(query)) {
-                console.log('Pattern matched:', pattern);
-                return this.executeQuery(pattern, query);
-            }
-        }
-        
-        // Default: show general overview if no specific pattern matches
-        console.log('No pattern matched, showing overview');
-        return {
-            type: 'overview',
-            data: this.csvData.slice(0, 100), // Limit to first 100 rows for overview
-            columns: columns,
-            chartType: 'table',
-            summary: `Overview of dataset: ${this.csvData.length} records with ${columns.length} columns (${columns.join(', ')})`
-        };
-    }
-
-    // Enhanced method for executing queries (fallback)
-    executeQuery(pattern, originalQuery) {
-        console.log('Executing query with pattern:', pattern);
-        
-        switch (pattern.type) {
-            case 'aggregate':
-                return this.performAggregation(pattern.operation, pattern.column);
-                
-            case 'sort':
-                const countMatch = originalQuery.match(/(\d+)/);
-                const count = countMatch ? parseInt(countMatch[1]) : 5;
-                return this.performSort(pattern.operation, pattern.column, count);
-                
-            case 'filter':
-                return this.performFilter([pattern.column], {});
-                
-            case 'group':
-                return this.performGroupBy(pattern.column);
-                
-            case 'correlation':
-                return this.performCorrelation(pattern.col1, pattern.col2);
-                
-            case 'display':
-                return this.performDisplay(pattern.column);
-                
-            default:
-                throw new Error('Unknown query type: ' + pattern.type);
-        }
-    }
-
-    // Enhanced method for sorting
-    performSort(order, column, count) {
-        console.log('Performing sort:', order, 'on column:', column, 'count:', count);
-        
-        const sortedData = [...this.csvData].sort((a, b) => {
-            const aVal = isNaN(parseFloat(a[column])) ? a[column] : parseFloat(a[column]);
-            const bVal = isNaN(parseFloat(b[column])) ? b[column] : parseFloat(b[column]);
-            
-            if (order === 'desc') {
-                return bVal > aVal ? 1 : -1;
-            } else {
-                return aVal > bVal ? 1 : -1;
-            }
-        });
-        
-        const resultData = sortedData.slice(0, count);
-        
-        return {
-            type: 'sort',
-            operation: order,
-            column: column,
-            count: count,
-            data: resultData,
-            chartType: 'bar',
-            summary: `Top ${count} records by ${column} (${order}ending order)`
-        };
-    }
-
-    // Utility methods for data analysis and chart generation
-    
-    isNumericColumn(column, data) {
-        const sampleValues = data.slice(0, 20).map(row => row[column]).filter(val => val !== null && val !== undefined && val !== '');
-        const numericValues = sampleValues.filter(val => !isNaN(parseFloat(val)) && isFinite(val));
-        return numericValues.length > sampleValues.length * 0.7;
-    }
-    
-    isCategoricalColumn(column, data) {
-        const sampleValues = data.slice(0, 50).map(row => row[column]).filter(val => val !== null && val !== undefined && val !== '');
-        const uniqueValues = [...new Set(sampleValues)];
-        return uniqueValues.length < sampleValues.length * 0.5 && uniqueValues.length > 1 && uniqueValues.length <= 20;
-    }
-    
-    isDateColumn(column, data) {
-        const sampleValues = data.slice(0, 20).map(row => row[column]).filter(val => val !== null && val !== undefined && val !== '');
-        const dateValues = sampleValues.filter(val => !isNaN(Date.parse(val)));
-        return dateValues.length > sampleValues.length * 0.7;
-    }
-    
-    findBestCategoricalColumn(columns, data) {
-        return columns.find(col => this.isCategoricalColumn(col, data)) || null;
-    }
-    
-    findBestNumericColumn(columns, data) {
-        return columns.find(col => this.isNumericColumn(col, data)) || null;
-    }
-    
-    findBestDateColumn(columns, data) {
-        return columns.find(col => this.isDateColumn(col, data)) || null;
-    }
-    
-    findAllNumericColumns(columns, data) {
-        return columns.filter(col => this.isNumericColumn(col, data));
-    }
-    
-    groupAndAggregate(data, groupColumn, valueColumn, operation = 'mean') {
-        const groups = {};
-        
-        data.forEach(row => {
-            const groupKey = row[groupColumn] || 'Unknown';
-            const value = parseFloat(row[valueColumn]);
-            
-            if (!isNaN(value)) {
-                if (!groups[groupKey]) {
-                    groups[groupKey] = [];
-                }
-                groups[groupKey].push(value);
-            }
-        });
-        
-        const result = {};
-        Object.keys(groups).forEach(key => {
-            const values = groups[key];
-            switch (operation) {
-                case 'sum':
-                    result[key] = values.reduce((sum, val) => sum + val, 0);
-                    break;
-                case 'count':
-                    result[key] = values.length;
-                    break;
-                case 'max':
-                    result[key] = Math.max(...values);
-                    break;
-                case 'min':
-                    result[key] = Math.min(...values);
-                    break;
-                case 'mean':
-                default:
-                    result[key] = values.reduce((sum, val) => sum + val, 0) / values.length;
-                    break;
-            }
-        });
-        
-        return result;
-    }
-    
-    countOccurrences(data, column) {
-        const counts = {};
-        data.forEach(row => {
-            const value = row[column] || 'Unknown';
-            counts[value] = (counts[value] || 0) + 1;
-        });
-        return counts;
-    }
-    
-    createBins(data, column, binCount = 10) {
-        const values = data.map(row => parseFloat(row[column])).filter(val => !isNaN(val));
-        if (values.length === 0) return [];
-        
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const binSize = (max - min) / binCount;
-        
-        const bins = [];
-        for (let i = 0; i < binCount; i++) {
-            const binMin = min + i * binSize;
-            const binMax = min + (i + 1) * binSize;
-            const count = values.filter(val => val >= binMin && (i === binCount - 1 ? val <= binMax : val < binMax)).length;
-            
-            bins.push({
-                min: binMin,
-                max: binMax,
-                count: count
-            });
-        }
-        
-        return bins;
-    }
-    
-    createHistogramBins(values, binCount = 10) {
-        if (values.length === 0) return [];
-        
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const binSize = (max - min) / binCount;
-        
-        const bins = [];
-        for (let i = 0; i < binCount; i++) {
-            const binMin = min + i * binSize;
-            const binMax = min + (i + 1) * binSize;
-            const count = values.filter(val => val >= binMin && (i === binCount - 1 ? val <= binMax : val < binMax)).length;
-            
-            bins.push({
-                min: binMin,
-                max: binMax,
-                count: count
-            });
-        }
-        
-        return bins;
-    }
-    
-    generateColors(count, alpha = 1) {
-        const colors = [
-            `rgba(54, 162, 235, ${alpha})`,   // Blue
-            `rgba(255, 99, 132, ${alpha})`,   // Red
-            `rgba(255, 205, 86, ${alpha})`,   // Yellow
-            `rgba(75, 192, 192, ${alpha})`,   // Teal
-            `rgba(153, 102, 255, ${alpha})`,  // Purple
-            `rgba(255, 159, 64, ${alpha})`,   // Orange
-            `rgba(199, 199, 199, ${alpha})`,  // Grey
-            `rgba(83, 102, 255, ${alpha})`,   // Indigo
-            `rgba(255, 99, 255, ${alpha})`,   // Pink
-            `rgba(99, 255, 132, ${alpha})`    // Green
-        ];
-        
-        if (count <= colors.length) {
-            return colors.slice(0, count);
-        }
-        
-        // Generate additional colors if needed
-        const result = [...colors];
-        for (let i = colors.length; i < count; i++) {
-            const hue = (i * 137.508) % 360; // Golden angle approximation
-            result.push(`hsla(${hue}, 70%, 60%, ${alpha})`);
-        }
-        
-        return result;
-    }
-    
-    getColorPalette() {
-        return [
-            '#3498db', '#e74c3c', '#f39c12', '#2ecc71', '#9b59b6',
-            '#1abc9c', '#34495e', '#e67e22', '#95a5a6', '#f1c40f'
-        ];
-    }
-    
-    generateChartTitle(result, xColumn = null, yColumn = null) {
-        if (result.summary) {
-            return result.summary;
-        }
-        
-        switch (result.type) {
-            case 'aggregate':
-                return `${result.operation?.toUpperCase() || 'Analysis'} of ${result.column || 'Data'}`;
-            case 'group':
-                return `Distribution by ${result.column || 'Category'}`;
-            case 'correlation':
-                return `${yColumn || result.col2 || 'Y'} vs ${xColumn || result.col1 || 'X'}`;
-            case 'trend':
-                return `Trend Analysis: ${yColumn || 'Values'} over ${xColumn || 'Time'}`;
-            case 'distribution':
-                return `Distribution of ${xColumn || result.column || 'Values'}`;
-            default:
-                if (xColumn && yColumn) {
-                    return `${yColumn} by ${xColumn}`;
-                } else if (xColumn) {
-                    return `Analysis of ${xColumn}`;
-                }
-                return 'Data Analysis';
-        }
-    }
-
-    // Additional chart configurations
-    
-    getEnhancedDoughnutConfig(result) {
-        const pieConfig = this.getEnhancedPieConfig(result);
-        if (!pieConfig) return null;
-        
-        return {
-            ...pieConfig,
-            type: 'doughnut',
-            options: {
-                ...pieConfig.options,
-                cutout: '60%',
-                plugins: {
-                    ...pieConfig.options.plugins,
-                    legend: {
-                        position: 'bottom'
-                    }
-                }
-            }
-        };
-    }
-    
-    getEnhancedAreaConfig(result, xAxis = null, yAxis = null) {
-        const lineConfig = this.getEnhancedLineConfig(result, xAxis, yAxis);
-        if (!lineConfig) return null;
-        
-        return {
-            ...lineConfig,
-            data: {
-                ...lineConfig.data,
-                datasets: lineConfig.data.datasets.map(dataset => ({
-                    ...dataset,
-                    fill: true,
-                    backgroundColor: dataset.borderColor + '30'
-                }))
-            }
-        };
-    }
-    
-    getEnhancedRadarConfig(result) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        const numericCols = this.findAllNumericColumns(columns, data).slice(0, 6); // Limit to 6 for readability
-        
-        if (numericCols.length < 3) {
-            return this.getEnhancedBarConfig(result); // Fallback
-        }
-        
-        // Calculate averages for each numeric column
-        const averages = numericCols.map(col => {
-            const values = data.map(row => parseFloat(row[col])).filter(val => !isNaN(val));
-            return values.reduce((sum, val) => sum + val, 0) / values.length;
-        });
-        
-        return {
-            type: 'radar',
-            data: {
-                labels: numericCols,
-                datasets: [{
-                    label: 'Average Values',
-                    data: averages,
-                    backgroundColor: this.getColorPalette()[0] + '40',
-                    borderColor: this.getColorPalette()[0],
-                    borderWidth: 2,
-                    pointBackgroundColor: this.getColorPalette()[0],
-                    pointBorderColor: '#fff',
-                    pointHoverBackgroundColor: '#fff',
-                    pointHoverBorderColor: this.getColorPalette()[0]
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Multi-dimensional Analysis'
-                    }
-                },
-                scales: {
-                    r: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return typeof value === 'number' ? value.toLocaleString() : value;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-    }
-    
-    getEnhancedPolarAreaConfig(result) {
-        const pieConfig = this.getEnhancedPieConfig(result);
-        if (!pieConfig) return null;
-        
-        return {
-            ...pieConfig,
-            type: 'polarArea',
-            options: {
-                ...pieConfig.options,
-                scales: {
-                    r: {
-                        beginAtZero: true
-                    }
-                }
-            }
-        };
-    }
-    
-    getEnhancedBubbleConfig(result) {
-        const data = result.data;
-        const columns = Object.keys(data[0] || {});
-        const numericCols = this.findAllNumericColumns(columns, data);
-        
-        if (numericCols.length < 3) {
-            return this.getEnhancedScatterConfig(result); // Fallback
-        }
-        
-        const xCol = numericCols[0];
-        const yCol = numericCols[1];
-        const sizeCol = numericCols[2];
-        
-        const bubbleData = data.map(row => ({
-            x: parseFloat(row[xCol]) || 0,
-            y: parseFloat(row[yCol]) || 0,
-            r: Math.max(3, Math.min(20, Math.abs(parseFloat(row[sizeCol]) || 1) / 10))
-        }));
-        
-        return {
-            type: 'bubble',
-            data: {
-                datasets: [{
-                    label: `${yCol} vs ${xCol} (size: ${sizeCol})`,
-                    data: bubbleData,
-                    backgroundColor: this.getColorPalette()[0] + '60',
-                    borderColor: this.getColorPalette()[0],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: this.generateChartTitle(result, xCol, yCol)
-                    },
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: xCol
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: yCol
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    // Enhanced table display with better data handling
-    updateTable(data) {
-        const tableContainer = document.getElementById('tableContainer');
-        if (!tableContainer || !data || data.length === 0) {
-            if (tableContainer) {
-                tableContainer.innerHTML = '<div class="empty-state"><p>No data to display</p></div>';
-            }
-            return;
-        }
-        
-        const columns = Object.keys(data[0]);
-        
-        // Filter out columns with all null/empty values
-        const meaningfulColumns = columns.filter(col => {
-            return data.some(row => row[col] !== null && row[col] !== undefined && row[col] !== '');
-        });
-        
-        if (meaningfulColumns.length === 0) {
-            tableContainer.innerHTML = '<div class="empty-state"><p>No meaningful data to display</p></div>';
-            return;
-        }
-        
-        const startIndex = (this.currentPage - 1) * this.rowsPerPage;
-        const endIndex = startIndex + this.rowsPerPage;
-        const pageData = data.slice(startIndex, endIndex);
-        
-        const tableHtml = `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        ${meaningfulColumns.map(col => {
-                            const columnType = this.dataStructure?.detailedColumnAnalysis?.[col]?.type || 'text';
-                            return `<th>${col} <span class="column-type ${columnType}">${columnType}</span></th>`;
-                        }).join('')}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${pageData.map(row => `
-                        <tr>
-                            ${meaningfulColumns.map(col => {
-                                let value = row[col];
-                                if (value === null || value === undefined || value === '') {
-                                    value = '<span class="null-value">—</span>';
-                                } else if (typeof value === 'number') {
-                                    value = value.toLocaleString();
-                                }
-                                return `<td>${value}</td>`;
-                            }).join('')}
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-        
-        tableContainer.innerHTML = tableHtml;
-        this.updatePagination(data.length);
     }
 
     updatePagination(totalRows) {
@@ -3142,7 +1511,15 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         if (!this.csvData) return;
         
         try {
-            const result = await this.aiService.getKPIs(this.csvData);
+            // Wait for AI service to be ready before trying to get KPIs
+            const aiService = await this.waitForAIService();
+            
+            if (!aiService || !aiService.hasValidApiKey()) {
+                console.log('No AI service or API key available, skipping KPI generation');
+                return;
+            }
+            
+            const result = await aiService.getKPIs(this.csvData);
             if (result.success && result.kpis.length > 0) {
                 this.displayKPIs(result.kpis);
             }
@@ -3201,8 +1578,8 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         if (!summaryContainer) return;
         
         const summaryHtml = `
-            <div class="ai-summary-card">
-                <div class="ai-summary-header">
+                <div class="ai-summary-card">
+                    <div class="ai-summary-header">
                     <div class="ai-summary-icon">🤖</div>
                     <div class="ai-summary-title">
                         <h4>AI Analysis Summary</h4>
@@ -3215,11 +1592,11 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
                 <div class="ai-summary-footer">
                     <small>💡 This summary was generated by AI to help you understand your data insights</small>
                 </div>
-            </div>
-        `;
+                </div>
+            `;
         
         summaryContainer.innerHTML = summaryHtml;
-        summaryContainer.style.display = 'block';
+            summaryContainer.style.display = 'block';
         
         // Scroll to show the summary
         setTimeout(() => {
@@ -3351,7 +1728,10 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
     // Enhanced method to generate AI summary of results
     async generateResultSummary(result, query, queryStructure) {
         try {
-            if (!this.aiService || !this.aiService.hasValidApiKey()) {
+            // Wait for AI service to be ready
+            const aiService = await this.waitForAIService();
+            
+            if (!aiService || !aiService.hasValidApiKey()) {
                 return this.generateFallbackSummary(result, query);
             }
             
@@ -3381,7 +1761,7 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
             
             Write in clear, professional language suitable for business stakeholders. Focus on practical insights and avoid technical jargon.`;
             
-            const summary = await this.aiService.generateResultSummary(summaryPrompt);
+            const summary = await aiService.generateResultSummary(summaryPrompt);
             return summary || this.generateFallbackSummary(result, query);
         } catch (error) {
             console.error('Error generating result summary:', error);
@@ -3392,7 +1772,10 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
     // Method to generate basic AI summary for pattern-matched queries
     async generateBasicResultSummary(result, query) {
         try {
-            if (!this.aiService || !this.aiService.hasValidApiKey()) {
+            // Wait for AI service to be ready
+            const aiService = await this.waitForAIService();
+            
+            if (!aiService || !aiService.hasValidApiKey()) {
                 return this.generateFallbackSummary(result, query);
             }
 
@@ -3412,7 +1795,7 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
             
             Keep it concise and business-focused.`;
 
-            const summary = await this.aiService.generateResultSummary(summaryPrompt);
+            const summary = await aiService.generateResultSummary(summaryPrompt);
             return summary || this.generateFallbackSummary(result, query);
         } catch (error) {
             console.error('Error generating basic summary:', error);
@@ -3452,6 +1835,1081 @@ This dataset appears to be suitable for ${this.suggestAnalysisTypes(columnAnalys
         summary += `Review the chart and table views for detailed findings. Consider exploring related questions to gain deeper insights.`;
         
         return summary;
+    }
+
+    // Missing utility methods
+    setupChatInterface() {
+        // Chat interface setup - placeholder for future chat functionality
+        console.log('Chat interface setup completed');
+    }
+
+    showLoading(show, message = 'Loading...') {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        
+        if (loadingOverlay) {
+            if (show) {
+                loadingOverlay.style.display = 'flex';
+                if (loadingText) loadingText.textContent = message;
+            } else {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+    }
+
+    showMessage(message, type = 'info') {
+        const messageToast = document.getElementById('messageToast');
+        const messageText = document.getElementById('messageText');
+        
+        if (messageToast && messageText) {
+            messageText.textContent = message;
+            messageToast.className = `message-toast message-toast--${type}`;
+            messageToast.style.display = 'block';
+            
+            // Auto hide after 5 seconds
+            setTimeout(() => {
+                messageToast.style.display = 'none';
+            }, 5000);
+        }
+    }
+
+    switchTab(tabName) {
+        // Remove active class from all tabs and content
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        
+        // Add active class to selected tab and content
+        const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
+        const selectedContent = document.getElementById(`${tabName}Tab`);
+        
+        if (selectedTab) selectedTab.classList.add('active');
+        if (selectedContent) selectedContent.classList.add('active');
+    }
+
+    updateTable(data) {
+        const tableContainer = document.getElementById('tableContainer');
+        if (!tableContainer || !data || data.length === 0) return;
+
+        const columns = Object.keys(data[0]);
+        const startIndex = (this.currentPage - 1) * this.rowsPerPage;
+        const endIndex = startIndex + this.rowsPerPage;
+        const pageData = data.slice(startIndex, endIndex);
+
+        let tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        ${columns.map(col => `<th>${col}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${pageData.map(row => `
+                        <tr>
+                            ${columns.map(col => {
+                                let value = row[col];
+                                if (value === null || value === undefined || value === '') {
+                                    value = '<span class="null-value">—</span>';
+                                } else if (typeof value === 'number') {
+                                    value = value.toLocaleString();
+                                }
+                                return `<td>${value}</td>`;
+                            }).join('')}
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        tableContainer.innerHTML = tableHtml;
+        this.updatePagination(data.length);
+    }
+
+    updateChartInfo(result, query) {
+        const chartInfo = document.getElementById('chartInfo');
+        if (!chartInfo) return;
+
+        // First render the chart
+        this.renderChart(result);
+
+        let chartInfoHtml = '';
+        
+        // Add chart explanation if available from AI analysis
+        if (result.queryStructure?.chartExplanation) {
+            const explanation = result.queryStructure.chartExplanation;
+            chartInfoHtml += `
+                <div class="chart-explanation">
+                    <h4>📊 Chart Guide</h4>
+                    <div class="chart-explanation-grid">
+                        <div class="explanation-item">
+                            <strong>X-Axis:</strong> ${explanation.xAxisMeaning || 'Categories or groups'}
+                        </div>
+                        <div class="explanation-item">
+                            <strong>Y-Axis:</strong> ${explanation.yAxisMeaning || 'Values being measured'}
+                        </div>
+                        <div class="explanation-item">
+                            <strong>Data Points:</strong> ${explanation.dataInterval || 'Individual records'}
+                        </div>
+                        <div class="explanation-item">
+                            <strong>How to Read:</strong> ${explanation.howToRead || 'Compare values across categories'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Add basic chart information
+        chartInfoHtml += `
+            <div class="chart-basic-info">
+                <h4>📈 Chart Information</h4>
+                <div class="chart-info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Query:</span>
+                        <span class="info-value">${query}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Chart Type:</span>
+                        <span class="info-value">${result.chartType || 'Table'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Data Points:</span>
+                        <span class="info-value">${Array.isArray(result.data) ? result.data.length : 1}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        chartInfo.innerHTML = chartInfoHtml;
+    }
+
+    renderChart(result) {
+        const canvas = document.getElementById('resultsChart');
+        const container = document.getElementById('chartContainer');
+        
+        if (!canvas || !container) return;
+
+        // Destroy existing chart if it exists
+        if (this.currentChart) {
+            this.currentChart.destroy();
+            this.currentChart = null;
+        }
+
+        // If chart type is table, hide canvas and show table instead
+        if (result.chartType === 'table' || !result.data || result.data.length === 0) {
+            canvas.style.display = 'none';
+            container.innerHTML = '<div class="no-chart-message">📊 Switch to Table view to see your data</div>';
+            return;
+        }
+
+        canvas.style.display = 'block';
+        const ctx = canvas.getContext('2d');
+
+        try {
+            const chartConfig = this.getChartConfig(result);
+            this.currentChart = new Chart(ctx, chartConfig);
+        } catch (error) {
+            console.error('Error rendering chart:', error);
+            container.innerHTML = '<div class="chart-error">⚠️ Unable to render chart. Please try a different visualization.</div>';
+        }
+    }
+
+    getChartConfig(result) {
+        const { chartType, data } = result;
+        
+        // Generate beautiful color palettes
+        const colors = this.getColorPalette(data.length);
+        
+        switch (chartType) {
+            case 'bar':
+                return this.createBarChart(data, colors);
+            case 'line':
+                return this.createLineChart(data, colors);
+            case 'pie':
+                return this.createPieChart(data, colors);
+            case 'doughnut':
+                return this.createDoughnutChart(data, colors);
+            case 'scatter':
+                return this.createScatterChart(data, colors);
+            case 'bubble':
+                return this.createBubbleChart(data, colors);
+            case 'radar':
+                return this.createRadarChart(data, colors);
+            case 'polarArea':
+                return this.createPolarAreaChart(data, colors);
+            case 'histogram':
+                return this.createHistogramChart(data, colors);
+            default:
+                return this.createBarChart(data, colors);
+        }
+    }
+
+    getColorPalette(count) {
+        // Modern, accessible color palette
+        const baseColors = [
+            '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+            '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1',
+            '#14B8A6', '#F43F5E', '#8B5CF6', '#22C55E', '#EAB308'
+        ];
+        
+        const colors = [];
+        for (let i = 0; i < count; i++) {
+            colors.push(baseColors[i % baseColors.length]);
+        }
+        
+        return colors;
+    }
+
+    createBarChart(data, colors) {
+        const labels = data.map(item => {
+            // Find the most appropriate label field
+            const keys = Object.keys(item);
+            const labelKey = keys.find(key => 
+                typeof item[key] === 'string' || 
+                key.toLowerCase().includes('name') || 
+                key.toLowerCase().includes('category') ||
+                key.toLowerCase().includes('group')
+            ) || keys[0];
+            return item[labelKey];
+        });
+
+        const values = data.map(item => {
+            // Find the most appropriate numeric field
+            const keys = Object.keys(item);
+            const valueKey = keys.find(key => 
+                typeof item[key] === 'number' || 
+                !isNaN(parseFloat(item[key]))
+            );
+            return parseFloat(item[valueKey]) || 0;
+        });
+
+        return {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Values',
+                    data: values,
+                    backgroundColor: colors.map(color => color + '80'), // Add transparency
+                    borderColor: colors,
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        displayColors: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#6B7280',
+                            maxRotation: 45
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000,
+                    easing: 'easeInOutQuart'
+                }
+            }
+        };
+    }
+
+    createLineChart(data, colors) {
+        const labels = data.map((item, index) => {
+            const keys = Object.keys(item);
+            const labelKey = keys.find(key => 
+                typeof item[key] === 'string' || 
+                key.toLowerCase().includes('date') || 
+                key.toLowerCase().includes('time')
+            ) || index.toString();
+            return item[labelKey] || index;
+        });
+
+        const values = data.map(item => {
+            const keys = Object.keys(item);
+            const valueKey = keys.find(key => 
+                typeof item[key] === 'number' || 
+                !isNaN(parseFloat(item[key]))
+            );
+            return parseFloat(item[valueKey]) || 0;
+        });
+
+        return {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Trend',
+                    data: values,
+                    borderColor: colors[0],
+                    backgroundColor: colors[0] + '20',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: colors[0],
+                    pointBorderColor: '#FFFFFF',
+                    pointBorderWidth: 2,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1500,
+                    easing: 'easeInOutCubic'
+                }
+            }
+        };
+    }
+
+    createPieChart(data, colors) {
+        const labels = data.map(item => {
+            const keys = Object.keys(item);
+            const labelKey = keys.find(key => typeof item[key] === 'string') || keys[0];
+            return item[labelKey];
+        });
+
+        const values = data.map(item => {
+            const keys = Object.keys(item);
+            const valueKey = keys.find(key => typeof item[key] === 'number') || keys[1];
+            return parseFloat(item[valueKey]) || 0;
+        });
+
+        return {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderColor: '#FFFFFF',
+                    borderWidth: 3,
+                    hoverOffset: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            color: '#374151'
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                animation: {
+                    animateRotate: true,
+                    duration: 1200
+                }
+            }
+        };
+    }
+
+    createDoughnutChart(data, colors) {
+        const config = this.createPieChart(data, colors);
+        config.type = 'doughnut';
+        config.options.plugins.legend.position = 'bottom';
+        return config;
+    }
+
+    createScatterChart(data, colors) {
+        const processedData = data.map(item => {
+            const keys = Object.keys(item);
+            const xKey = keys.find(key => key.includes('x') || typeof item[key] === 'number') || keys[0];
+            const yKey = keys.find(key => key.includes('y') || (key !== xKey && typeof item[key] === 'number')) || keys[1];
+            
+            return {
+                x: parseFloat(item[xKey]) || 0,
+                y: parseFloat(item[yKey]) || 0
+            };
+        });
+
+        return {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Data Points',
+                    data: processedData,
+                    backgroundColor: colors[0] + '80',
+                    borderColor: colors[0],
+                    borderWidth: 2,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    x: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000
+                }
+            }
+        };
+    }
+
+    createBubbleChart(data, colors) {
+        const processedData = data.map((item, index) => {
+            const keys = Object.keys(item);
+            const xKey = keys.find(key => key.includes('x') || typeof item[key] === 'number') || keys[0];
+            const yKey = keys.find(key => key.includes('y') || (key !== xKey && typeof item[key] === 'number')) || keys[1];
+            const rKey = keys.find(key => key.includes('r') || key.includes('size') || (key !== xKey && key !== yKey && typeof item[key] === 'number')) || keys[2];
+            
+            return {
+                x: parseFloat(item[xKey]) || 0,
+                y: parseFloat(item[yKey]) || 0,
+                r: Math.max(5, (parseFloat(item[rKey]) || 10) / 2)
+            };
+        });
+
+        return {
+            type: 'bubble',
+            data: {
+                datasets: [{
+                    label: 'Bubble Data',
+                    data: processedData,
+                    backgroundColor: colors.map(color => color + '60'),
+                    borderColor: colors,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    x: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1200
+                }
+            }
+        };
+    }
+
+    createRadarChart(data, colors) {
+        const labels = Object.keys(data[0] || {}).filter(key => 
+            typeof data[0][key] === 'number' || !isNaN(parseFloat(data[0][key]))
+        );
+
+        const datasets = data.slice(0, 3).map((item, index) => {
+            const values = labels.map(label => parseFloat(item[label]) || 0);
+            return {
+                label: item.name || `Series ${index + 1}`,
+                data: values,
+                backgroundColor: colors[index] + '30',
+                borderColor: colors[index],
+                borderWidth: 2,
+                pointBackgroundColor: colors[index],
+                pointBorderColor: '#FFFFFF',
+                pointRadius: 4
+            };
+        });
+
+        return {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            color: '#374151'
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        pointLabels: {
+                            color: '#6B7280'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000
+                }
+            }
+        };
+    }
+
+    createPolarAreaChart(data, colors) {
+        const config = this.createPieChart(data, colors);
+        config.type = 'polarArea';
+        config.options.scales = {
+            r: {
+                beginAtZero: true,
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.1)'
+                },
+                ticks: {
+                    color: '#6B7280'
+                }
+            }
+        };
+        return config;
+    }
+
+    createHistogramChart(data, colors) {
+        // For histogram, we need to bin the data
+        const values = data.map(item => {
+            const keys = Object.keys(item);
+            const valueKey = keys.find(key => typeof item[key] === 'number') || keys[0];
+            return parseFloat(item[valueKey]) || 0;
+        });
+
+        // Create bins
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const binCount = Math.min(10, Math.ceil(Math.sqrt(values.length)));
+        const binWidth = (max - min) / binCount;
+        
+        const bins = Array(binCount).fill(0);
+        const binLabels = [];
+        
+        for (let i = 0; i < binCount; i++) {
+            const binStart = min + i * binWidth;
+            const binEnd = min + (i + 1) * binWidth;
+            binLabels.push(`${binStart.toFixed(1)}-${binEnd.toFixed(1)}`);
+        }
+        
+        values.forEach(value => {
+            const binIndex = Math.min(Math.floor((value - min) / binWidth), binCount - 1);
+            bins[binIndex]++;
+        });
+
+        return {
+            type: 'bar',
+            data: {
+                labels: binLabels,
+                datasets: [{
+                    label: 'Frequency',
+                    data: bins,
+                    backgroundColor: colors[0] + '80',
+                    borderColor: colors[0],
+                    borderWidth: 2,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Frequency',
+                            color: '#6B7280'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Value Range',
+                            color: '#6B7280'
+                        },
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#6B7280',
+                            maxRotation: 45
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000
+                }
+            }
+        };
+    }
+
+    updateQueryHistory() {
+        const historyList = document.getElementById('historyList');
+        if (!historyList) return;
+
+        const recentQueries = this.queryHistory.slice(0, 5);
+        
+        if (recentQueries.length === 0) {
+            historyList.innerHTML = '<p class="no-history">No queries yet</p>';
+            return;
+        }
+        
+        const historyHtml = recentQueries.map((historyItem, index) => `
+            <div class="history-item" data-query-index="${index}">
+                ${typeof historyItem === 'string' ? historyItem : historyItem.query}
+            </div>
+        `).join('');
+
+        historyList.innerHTML = historyHtml;
+        
+        // Add event listeners to avoid syntax errors
+        const historyItems = historyList.querySelectorAll('.history-item');
+        historyItems.forEach((item, index) => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const historyItem = recentQueries[index];
+                const query = typeof historyItem === 'string' ? historyItem : historyItem.query;
+                this.fillQuery(query);
+            });
+        });
+    }
+
+    searchTable(searchTerm) {
+        if (!this.csvData) return;
+
+        if (!searchTerm.trim()) {
+            this.filteredData = null;
+            this.updateTable(this.csvData);
+            return;
+        }
+
+        const filtered = this.csvData.filter(row => {
+            return Object.values(row).some(value => 
+                value && value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        });
+
+        this.filteredData = filtered;
+        this.currentPage = 1;
+        this.updateTable(filtered);
+    }
+
+    exportData() {
+        const dataToExport = this.filteredData || this.csvData;
+        if (!dataToExport || dataToExport.length === 0) {
+            this.showMessage('No data to export', 'warning');
+            return;
+        }
+
+        const csv = Papa.unparse(dataToExport);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'exported_data.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            this.showMessage('Data exported successfully!', 'success');
+        }
+    }
+
+    async executeStructuredQuery(queryStructure, originalQuery) {
+        try {
+            const { queryType, targetColumns, operation, filterConditions, chartType } = queryStructure;
+            
+            // Default result structure
+            let result = {
+                type: queryType,
+                data: [],
+                chartType: chartType || 'table',
+                summary: '',
+                queryStructure: queryStructure
+            };
+
+            // Execute the appropriate analysis method
+            let analysisResult = null;
+            
+            switch (queryType) {
+                case 'aggregation':
+                    analysisResult = await this.performAggregation(targetColumns?.[0], operation);
+                    break;
+                case 'groupby':
+                    analysisResult = await this.performGroupBy(targetColumns?.[0], targetColumns?.[1]);
+                    break;
+                case 'filter':
+                    analysisResult = await this.performFilter(targetColumns || [], filterConditions || {});
+                    break;
+                case 'correlation':
+                    analysisResult = await this.performCorrelation(targetColumns?.[0], targetColumns?.[1]);
+                    break;
+                case 'trend':
+                    analysisResult = await this.performTrend(targetColumns || []);
+                    break;
+                case 'distribution':
+                    analysisResult = await this.performDistribution(targetColumns?.[0]);
+                    break;
+                default:
+                    analysisResult = await this.performFilter(targetColumns || [], {});
+            }
+
+            // Handle null results gracefully
+            if (analysisResult && analysisResult.data) {
+                result = {
+                    ...result,
+                    ...analysisResult,
+                    chartType: chartType || analysisResult.chartType || 'table',
+                    queryStructure: queryStructure
+                };
+            } else {
+                // Fallback for failed analysis
+                result = {
+                    ...result,
+                    data: this.csvData.slice(0, 20),
+                    chartType: 'table',
+                    summary: `Could not process "${originalQuery}" - showing sample data instead`,
+                    error: 'Analysis failed - check column names and data types'
+                };
+            }
+
+            return result;
+        } catch (error) {
+            console.error('Error executing structured query:', error);
+            
+            // Return a safe fallback result instead of null
+            return {
+                type: 'filter',
+                data: this.csvData.slice(0, 20),
+                chartType: 'table',
+                summary: `Error processing query: ${error.message}`,
+                error: error.message,
+                queryStructure: queryStructure
+            };
+        }
+    }
+
+    parseQuery(query) {
+        const lowerQuery = query.toLowerCase();
+        
+        for (const pattern of this.queryPatterns) {
+            const match = lowerQuery.match(pattern.pattern);
+            if (match) {
+                return this.executePatternQuery(pattern, match, query);
+            }
+        }
+        
+        // Default fallback
+        return {
+            type: 'filter',
+            data: this.csvData.slice(0, 50),
+            chartType: 'table',
+            summary: `Showing first 50 records for query: "${query}"`
+        };
+    }
+
+    executePatternQuery(pattern, match, originalQuery) {
+        const { type, operation, column } = pattern;
+        
+        switch (type) {
+            case 'aggregate':
+                return this.performAggregation(column, operation);
+            case 'sort':
+                const count = match[1] ? parseInt(match[1]) : 10;
+                return this.performSort(column, operation, count);
+            case 'group':
+                return this.performGroupBy(column);
+            case 'filter':
+                return this.performFilter([column], {});
+            case 'correlation':
+                return this.performCorrelation(pattern.col1, pattern.col2);
+            default:
+                return {
+                    type: 'display',
+                    data: this.csvData.slice(0, 20),
+                    chartType: 'table',
+                    summary: `Displaying data for: ${originalQuery}`
+                };
+        }
+    }
+
+    performAggregation(column, operation) {
+        if (!this.csvData || !column) return null;
+        
+        const values = this.csvData.map(row => parseFloat(row[column])).filter(val => !isNaN(val));
+        if (values.length === 0) return null;
+        
+        let result;
+        switch (operation) {
+            case 'mean':
+                result = values.reduce((sum, val) => sum + val, 0) / values.length;
+                break;
+            case 'sum':
+                result = values.reduce((sum, val) => sum + val, 0);
+                break;
+            case 'max':
+                result = Math.max(...values);
+                break;
+            case 'min':
+                result = Math.min(...values);
+                break;
+            case 'count':
+                result = values.length;
+                break;
+            default:
+                result = values.reduce((sum, val) => sum + val, 0) / values.length;
+        }
+        
+        return {
+            type: 'aggregate',
+            operation: operation,
+            column: column,
+            result: result,
+            data: [{ [column]: result, operation: operation }],
+            chartType: 'bar',
+            summary: `${operation} of ${column}: ${result.toFixed(2)}`
+        };
+    }
+
+    performGroupBy(column, valueColumn = null) {
+        if (!this.csvData || !column) return null;
+        
+        const groups = {};
+        this.csvData.forEach(row => {
+            const key = row[column];
+            if (!groups[key]) {
+                groups[key] = [];
+            }
+            groups[key].push(row);
+        });
+        
+        const data = Object.entries(groups).map(([key, rows]) => {
+            const result = { [column]: key, count: rows.length };
+            
+            if (valueColumn) {
+                const values = rows.map(row => parseFloat(row[valueColumn])).filter(val => !isNaN(val));
+                if (values.length > 0) {
+                    result[valueColumn] = values.reduce((sum, val) => sum + val, 0) / values.length;
+                }
+            }
+            
+            return result;
+        });
+        
+        return {
+            type: 'group',
+            column: column,
+            data: data,
+            chartType: 'bar',
+            summary: `Grouped by ${column}: ${data.length} categories`
+        };
+    }
+
+    performSort(column, direction, count = 10) {
+        if (!this.csvData || !column) return null;
+        
+        const sorted = [...this.csvData].sort((a, b) => {
+            const aVal = parseFloat(a[column]) || 0;
+            const bVal = parseFloat(b[column]) || 0;
+            return direction === 'desc' ? bVal - aVal : aVal - bVal;
+        });
+        
+        return {
+            type: 'sort',
+            column: column,
+            direction: direction,
+            count: count,
+            data: sorted.slice(0, count),
+            chartType: 'bar',
+            summary: `Top ${count} records by ${column}`
+        };
+    }
+
+    performCorrelation(col1, col2) {
+        if (!this.csvData || !col1 || !col2) return null;
+        
+        const data = this.csvData
+            .filter(row => row[col1] && row[col2])
+            .map(row => ({
+                x: parseFloat(row[col1]) || row[col1],
+                y: parseFloat(row[col2]) || row[col2],
+                [col1]: row[col1],
+                [col2]: row[col2]
+            }))
+            .filter(point => !isNaN(point.x) && !isNaN(point.y));
+        
+        return {
+            type: 'correlation',
+            col1: col1,
+            col2: col2,
+            data: data,
+            chartType: 'scatter',
+            summary: `Correlation between ${col1} and ${col2}: ${data.length} data points`
+        };
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 }
 

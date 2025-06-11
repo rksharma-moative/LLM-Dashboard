@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Functionality Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>CSV Dashboard Functionality Test</h1>
+    <div id="test-results"></div>
+    
+    <script src="aiService.js"></script>
+    <script src="app.js"></script>
+    <script>
+        async function runTests() {
+            const results = document.getElementById('test-results');
+            
+            function addResult(test, status, message) {
+                const div = document.createElement('div');
+                div.className = `test-result ${status}`;
+                div.innerHTML = `<strong>${test}:</strong> ${message}`;
+                results.appendChild(div);
+            }
+            
+            // Test 1: Check if AIService loads
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for loading
+            
+            if (window.AIService) {
+                addResult('AIService Loading', 'success', 'AIService class is available');
+            } else {
+                addResult('AIService Loading', 'error', 'AIService class not found');
+                return;
+            }
+            
+            // Test 2: Check if GoogleGenerativeAI loads
+            if (window.GoogleGenerativeAI) {
+                addResult('Google AI SDK', 'success', 'Google AI SDK loaded successfully');
+            } else {
+                addResult('Google AI SDK', 'info', 'Google AI SDK still loading...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                if (window.GoogleGenerativeAI) {
+                    addResult('Google AI SDK (Retry)', 'success', 'Google AI SDK loaded after wait');
+                } else {
+                    addResult('Google AI SDK (Retry)', 'error', 'Google AI SDK failed to load');
+                }
+            }
+            
+            // Test 3: Create AIService instance
+            try {
+                const aiService = new window.AIService();
+                addResult('AIService Creation', 'success', 'AIService instance created successfully');
+                
+                // Test 4: Check hasValidApiKey method
+                const hasKey = aiService.hasValidApiKey();
+                addResult('API Key Check', 'info', `hasValidApiKey() returns: ${hasKey}`);
+                
+            } catch (error) {
+                addResult('AIService Creation', 'error', `Failed to create AIService: ${error.message}`);
+            }
+            
+            // Test 5: Create Dashboard instance
+            try {
+                const dashboard = new CSVDashboard();
+                addResult('Dashboard Creation', 'success', 'Dashboard instance created successfully');
+                
+                // Test 6: Check if dashboard methods exist
+                const methods = ['waitForAIService', 'saveApiKey', 'testApiKey', 'showLoading', 'showMessage'];
+                methods.forEach(method => {
+                    if (typeof dashboard[method] === 'function') {
+                        addResult(`Method: ${method}`, 'success', 'Method exists and is callable');
+                    } else {
+                        addResult(`Method: ${method}`, 'error', 'Method missing or not a function');
+                    }
+                });
+                
+                // Test 7: Test waitForAIService
+                try {
+                    addResult('Testing waitForAIService', 'info', 'Starting async wait test...');
+                    const service = await dashboard.waitForAIService();
+                    if (service) {
+                        addResult('waitForAIService', 'success', 'Successfully waited for and retrieved AI service');
+                    } else {
+                        addResult('waitForAIService', 'error', 'waitForAIService returned null/undefined');
+                    }
+                } catch (error) {
+                    addResult('waitForAIService', 'error', `waitForAIService failed: ${error.message}`);
+                }
+                
+            } catch (error) {
+                addResult('Dashboard Creation', 'error', `Failed to create Dashboard: ${error.message}`);
+            }
+            
+            addResult('Test Suite Complete', 'info', 'All tests have been executed');
+        }
+        
+        // Run tests when page loads
+        window.addEventListener('load', () => {
+            setTimeout(runTests, 500); // Give everything time to load
+        });
+    </script>
+</body>
+</html> 

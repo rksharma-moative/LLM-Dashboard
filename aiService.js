@@ -1,31 +1,179 @@
-// AI Service for data analysis
-import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+// AI Service for data analysis with optimized loading
+let GoogleGenerativeAI;
+let SDKLoadPromise = null;
+let SDKLoadStartTime = Date.now();
+
+// Create a singleton promise for SDK loading with timeout and caching
+function loadGoogleAISDK() {
+    if (SDKLoadPromise) {
+        return SDKLoadPromise;
+    }
+    
+    SDKLoadPromise = new Promise(async (resolve, reject) => {
+        const timeout = setTimeout(() => {
+            reject(new Error('SDK loading timeout after 10 seconds'));
+        }, 10000);
+
+        try {
+            console.log('🚀 Loading Google AI SDK...');
+            
+            // Try multiple CDN sources for faster loading
+            const sources = [
+                "https://esm.run/@google/generative-ai",
+                "https://cdn.skypack.dev/@google/generative-ai",
+                "https://unpkg.com/@google/generative-ai?module"
+            ];
+            
+            let lastError;
+            for (const source of sources) {
+                try {
+                    const module = await import(source);
+                    GoogleGenerativeAI = module.GoogleGenerativeAI;
+                    clearTimeout(timeout);
+                    const loadTime = Date.now() - SDKLoadStartTime;
+                    console.log(`✅ Google AI SDK loaded successfully in ${loadTime}ms from ${source}`);
+                    resolve(GoogleGenerativeAI);
+                    return;
+                } catch (error) {
+                    console.warn(`Failed to load from ${source}:`, error.message);
+                    lastError = error;
+                    continue;
+                }
+            }
+            
+            throw lastError || new Error('All SDK sources failed');
+        } catch (error) {
+            clearTimeout(timeout);
+            console.error('❌ Failed to load Google AI SDK:', error);
+            reject(error);
+        }
+    });
+    
+    return SDKLoadPromise;
+}
+
+// Start loading immediately but don't block
+loadGoogleAISDK().catch(() => {
+    // Silent fail - will be handled by individual components
+});
 
 class AIService {
     constructor(apiKey = null) {
         this.apiKey = apiKey || localStorage.getItem('googleAIApiKey');
-        if (this.apiKey) {
-            this.genAI = new GoogleGenerativeAI(this.apiKey);
-            this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        }
+        this.genAI = null;
+        this.model = null;
+        this.isInitialized = false;
+        this.initializationPromise = null;
+        
         this.lastRequestTime = 0;
-        this.minRequestInterval = 1000; // Minimum 1 second between requests
+        this.minRequestInterval = 1500;
+        this.requestQueue = [];
+        this.isProcessingQueue = false;
+        this.cache = new Map();
+        this.maxCacheSize = 100;
+        
+        // Start async initialization immediately
+        this.initialize();
     }
 
-    setApiKey(apiKey) {
+    async initialize() {
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
+
+        this.initializationPromise = (async () => {
+            try {
+                console.log('🔧 Initializing AI Service...');
+                
+                // Wait for SDK to load with timeout
+                await Promise.race([
+                    loadGoogleAISDK(),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Initialization timeout')), 8000)
+                    )
+                ]);
+
+                // Initialize with API key if available
+                if (this.apiKey && GoogleGenerativeAI) {
+                    this.genAI = new GoogleGenerativeAI(this.apiKey);
+                    this.model = this.genAI.getGenerativeModel({ 
+                        model: "gemini-1.5-flash",
+                        generationConfig: {
+                            temperature: 0.7,
+                            topK: 40,
+                            topP: 0.95,
+                            maxOutputTokens: 2048,
+                        }
+                    });
+                    console.log('✅ AI Service initialized with API key');
+                } else {
+                    console.log('⚠️ AI Service initialized without API key');
+                }
+                
+                this.isInitialized = true;
+                return true;
+            } catch (error) {
+                console.error('❌ AI Service initialization failed:', error);
+                this.isInitialized = false;
+                throw error;
+            }
+        })();
+
+        return this.initializationPromise;
+    }
+
+    async ensureInitialized() {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+        return this.isInitialized;
+    }
+
+    async setApiKey(apiKey) {
         this.apiKey = apiKey;
         localStorage.setItem('googleAIApiKey', apiKey);
-        this.genAI = new GoogleGenerativeAI(apiKey);
-        this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        try {
+            // Ensure SDK is loaded
+            await this.ensureInitialized();
+            
+            if (GoogleGenerativeAI) {
+                this.genAI = new GoogleGenerativeAI(apiKey);
+                this.model = this.genAI.getGenerativeModel({ 
+                    model: "gemini-1.5-flash",
+                    generationConfig: {
+                        temperature: 0.7,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: 2048,
+                    }
+                });
+                console.log('✅ API key updated successfully');
+            } else {
+                throw new Error('Google AI SDK not available');
+            }
+        } catch (error) {
+            console.error('Failed to set API key:', error);
+            throw error;
+        }
     }
 
     hasValidApiKey() {
-        return !!this.apiKey;
+        return !!(this.apiKey && this.genAI && this.model && this.isInitialized);
+    }
+
+    async isReady() {
+        try {
+            await this.ensureInitialized();
+            return this.hasValidApiKey();
+        } catch {
+            return false;
+        }
     }
 
     async testApiKey() {
         if (!this.hasValidApiKey()) {
-            throw new Error('No API key configured');
+            throw new Error('No valid API key configured or Google AI SDK not loaded');
         }
 
         try {
@@ -47,6 +195,64 @@ class AIService {
         this.lastRequestTime = Date.now();
     }
 
+
+
+    // Enhanced caching for AI responses
+    getCacheKey(operation, data) {
+        const dataHash = this.hashData(data);
+        return `${operation}_${dataHash}`;
+    }
+
+    hashData(data) {
+        // Simple hash function for data
+        if (typeof data === 'string') {
+            return data.substring(0, 100);
+        }
+        return JSON.stringify(data).substring(0, 100);
+    }
+
+    setCache(key, value) {
+        if (this.cache.size >= this.maxCacheSize) {
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+        this.cache.set(key, value);
+    }
+
+    getCache(key) {
+        return this.cache.get(key);
+    }
+
+    // Queue management for API requests
+    async queueRequest(requestFunc) {
+        return new Promise((resolve, reject) => {
+            this.requestQueue.push({ requestFunc, resolve, reject });
+            this.processQueue();
+        });
+    }
+
+    async processQueue() {
+        if (this.isProcessingQueue || this.requestQueue.length === 0) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        while (this.requestQueue.length > 0) {
+            const { requestFunc, resolve, reject } = this.requestQueue.shift();
+            
+            try {
+                await this.waitForRateLimit();
+                const result = await requestFunc();
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+        }
+
+        this.isProcessingQueue = false;
+    }
+
     // New method to analyze CSV structure and data types
     async analyzeCSVStructure(data) {
         if (!this.hasValidApiKey()) {
@@ -57,9 +263,15 @@ class AIService {
             };
         }
 
+        // Check cache first
+        const cacheKey = this.getCacheKey('analyzeCSVStructure', data);
+        const cached = this.getCache(cacheKey);
+        if (cached) {
+            console.log('Using cached CSV structure analysis');
+            return cached;
+        }
+
         try {
-            await this.waitForRateLimit();
-            
             if (!data || data.length === 0) {
                 return { analysis: "No data provided", success: false };
             }
@@ -106,17 +318,24 @@ class AIService {
             
             Format as structured text, not JSON.`;
 
-            const result = await this.model.generateContent(prompt);
-            const response = await result.response;
+            const result = await this.queueRequest(async () => {
+                const response = await this.model.generateContent(prompt);
+                return await response.response;
+            });
             
-            return {
-                analysis: response.text(),
+            const analysisResult = {
+                analysis: result.text(),
                 columnAnalysis: columnAnalysis,
                 totalRows: data.length,
                 totalColumns: columns.length,
                 columns: columns,
                 success: true
             };
+
+            // Cache the result
+            this.setCache(cacheKey, analysisResult);
+            
+            return analysisResult;
         } catch (error) {
             console.error('CSV Structure Analysis Error:', error);
             return {
@@ -136,9 +355,15 @@ class AIService {
             };
         }
 
+        // Check cache first
+        const cacheKey = this.getCacheKey('generateSuggestions', data);
+        const cached = this.getCache(cacheKey);
+        if (cached) {
+            console.log('Using cached suggestions');
+            return cached;
+        }
+
         try {
-            await this.waitForRateLimit();
-            
             if (!data || data.length === 0) {
                 return { suggestions: ["No data available for analysis"], success: false };
             }
@@ -166,7 +391,7 @@ class AIService {
             });
 
             const prompt = `
-            Based on this CSV dataset, generate 5-7 specific, actionable analysis questions:
+            Based on this CSV dataset, generate 6-8 specific analysis queries that will create EXCELLENT visualizations:
             
             Dataset Info:
             - Total rows: ${data.length}
@@ -175,18 +400,26 @@ class AIService {
             - Date columns: ${dateColumns.join(', ') || 'None'}
             - All columns: ${columns.join(', ')}
             
-            Sample data:
-            ${JSON.stringify(sampleData, null, 2)}
+            Sample data (first 3 rows):
+            ${JSON.stringify(sampleData.slice(0, 3), null, 2)}
             
-            Generate questions that:
-            1. Focus on meaningful patterns and insights
-            2. Use specific column names from the dataset
-            3. Are suitable for data visualization
-            4. Cover different types of analysis (trends, comparisons, distributions, correlations)
-            5. Are relevant to the actual data content
+            Generate queries that:
+            1. Create BEAUTIFUL and MEANINGFUL charts (bar charts, line charts, scatter plots, histograms)
+            2. Use SPECIFIC column names from the actual dataset
+            3. Focus on comparisons, trends, distributions, and correlations
+            4. Are perfect for business insights and decision making
+            5. Will generate data that plots well on X and Y axes
             
-            Return ONLY the questions, one per line, without numbering or bullets.
-            Make each question specific and actionable.`;
+            PRIORITIZE these types of queries:
+            - "Show [categorical column] vs [numeric column]" (great bar charts)
+            - "Compare [numeric values] across [categories]" (excellent comparisons)
+            - "What is the trend of [numeric column] over [time/sequence]?" (line charts)
+            - "Find correlation between [numeric column 1] and [numeric column 2]" (scatter plots)
+            - "Show distribution of [numeric column]" (histograms)
+            - "Top 10 [items] by [numeric value]" (ranked bar charts)
+            
+            Return ONLY the questions, one per line, without numbering.
+            Make each question crystal clear and visualization-ready.`;
 
             const result = await this.model.generateContent(prompt);
             const response = await result.response;
@@ -238,7 +471,7 @@ class AIService {
             const sampleData = data.slice(0, 10);
             
             const prompt = `
-            You are an expert data analyst. Analyze this user query and provide the BEST possible visualization strategy.
+            You are an expert data visualization analyst. Analyze this user query and provide the OPTIMAL visualization strategy with SPECIFIC axis recommendations.
             
             Dataset Information:
             - Columns: ${columns.join(', ')}
@@ -247,20 +480,27 @@ class AIService {
             
             User Query: "${query}"
             
-            IMPORTANT: Choose the most appropriate chart type and axes that make logical sense for the data and query.
+            CRITICAL VISUALIZATION REQUIREMENTS:
+            1. Choose the BEST chart type for maximum insight and visual appeal
+            2. Specify EXACTLY what should be on X-axis and Y-axis with proper data values
+            3. Determine optimal data grouping, aggregation, and binning
+            4. Recommend data ranges and scaling for best visual representation
+            5. Suggest meaningful axis labels and chart titles
             
-            For charts, consider:
-            - Bar charts: for comparing categories or groups
-            - Line charts: for trends over time or continuous data
-            - Pie charts: for parts of a whole (percentages)
-            - Scatter plots: for correlations between two numeric variables
-            - Area charts: for cumulative data or multiple series
-            - Histograms: for data distribution
+            CHART TYPE GUIDELINES:
+            - Bar charts: comparing categories/groups (X=categories, Y=values)
+            - Line charts: trends over time/sequence (X=time/sequence, Y=metric)
+            - Scatter plots: correlations between two numeric variables (X=variable1, Y=variable2)
+            - Pie/Donut charts: parts of a whole (percentages/proportions)
+            - Histograms: data distribution (X=value_ranges, Y=frequency/count)
+            - Area charts: cumulative trends or multiple series
             
-            For axes, think carefully:
-            - X-axis should be the independent variable (categories, time, grouping factor)
-            - Y-axis should be the dependent variable (values being measured/compared)
-            - Use meaningful, descriptive axis labels
+            AXIS OPTIMIZATION:
+            - X-axis: independent variable (what you're grouping/measuring by)
+            - Y-axis: dependent variable (what you're measuring/counting)
+            - Use descriptive, business-friendly labels
+            - Consider data ranges and recommend optimal scaling
+            - Suggest number of data points for best readability (e.g., top 10, group small categories)
             
             Provide a JSON response with this exact structure:
             {
@@ -271,19 +511,32 @@ class AIService {
                 "chartType": "bar|line|pie|scatter|histogram|area|table",
                 "xAxisLabel": "Descriptive X-axis label",
                 "yAxisLabel": "Descriptive Y-axis label", 
-                "chartTitle": "Meaningful chart title",
-                "expectedResult": "Clear description of what this analysis shows",
+                "chartTitle": "Compelling chart title",
+                "expectedResult": "What insights this analysis will reveal",
                 "visualization": {
                     "type": "bar|line|pie|scatter|histogram|area|table",
                     "xAxis": "column_name",
-                    "yAxis": "column_name", 
+                    "yAxis": "column_name_or_calculated_field", 
                     "groupBy": "column_name_if_applicable",
-                    "reasoning": "Why this chart type and axes were chosen"
+                    "dataLimit": "number_of_data_points_to_show",
+                    "sortBy": "how_to_sort_data_for_best_visual",
+                    "reasoning": "Why this chart type and axes were chosen for maximum insight"
                 },
-                "insights": "Key insights this visualization should reveal"
+                "chartExplanation": {
+                    "xAxisMeaning": "What the X-axis represents for business users",
+                    "yAxisMeaning": "What the Y-axis represents for business users", 
+                    "dataPointMeaning": "What each bar/point/segment represents",
+                    "howToInterpret": "How to read and understand this chart",
+                    "keyInsights": "What patterns or insights to look for"
+                },
+                "dataOptimization": {
+                    "recommendedLimit": "optimal_number_of_data_points",
+                    "aggregationMethod": "how_to_group_or_aggregate_data",
+                    "filterSuggestion": "any_filters_to_apply_for_cleaner_visualization"
+                }
             }
             
-            Return ONLY valid JSON without any markdown formatting or explanations.`;
+            Return ONLY valid JSON without any markdown formatting.`;
 
             const result = await this.model.generateContent(prompt);
             const response = await result.response;
@@ -511,46 +764,51 @@ class AIService {
             await this.waitForRateLimit();
             
             const enhancedPrompt = `
-            You are a senior data analyst providing insights to business stakeholders. 
+            You are a data analyst explaining query results to a user who asked a specific question about their data.
             
             ${summaryPrompt}
             
-            IMPORTANT REQUIREMENTS:
-            - Write exactly 150-200 words
-            - Use clear, professional business language
-            - Focus on actionable insights and practical implications
-            - Avoid technical jargon and statistical terms
-            - Structure as: Key Finding → Business Impact → Recommendation
-            - Be specific about numbers and trends when relevant
-            - End with a clear next step or recommendation
+            CRITICAL REQUIREMENTS:
+            - Write exactly 120-180 words
+            - DIRECTLY answer the user's original question first
+            - Explain what the filtered/processed data shows
+            - Use specific numbers and values from the results
+            - Make it clear what the user should understand from this analysis
+            - Focus on the ANSWER to their question, not general insights
+            - Use simple, clear language that explains the findings
+            - Structure as: Direct Answer → What the Data Shows → Key Takeaway
             
-            Format your response as a cohesive paragraph that flows naturally.
-            Do not use bullet points or numbered lists.
-            Make it compelling and valuable for decision-makers.`;
+            Example format:
+            "Based on your query '[query]', the analysis shows [direct answer with numbers]. 
+            The filtered data reveals [specific findings from the results]. 
+            This means [clear explanation of what user should understand]."
+            
+            Be specific about the actual results, not generic insights.
+            Help the user understand exactly what their query revealed.`;
             
             const result = await this.model.generateContent(enhancedPrompt);
             const response = await result.response;
             
             let summary = response.text().trim();
             
-            // Ensure the summary is within word count (roughly 150-200 words)
+            // Ensure the summary is within word count (roughly 120-180 words)
             const words = summary.split(/\s+/);
-            if (words.length > 220) {
-                summary = words.slice(0, 200).join(' ') + '...';
-            } else if (words.length < 100) {
-                // If too short, request a more detailed summary
+            if (words.length > 200) {
+                summary = words.slice(0, 180).join(' ') + '...';
+            } else if (words.length < 80) {
+                // If too short, request a more detailed explanation
                 const expandedPrompt = `
-                Expand this analysis into a more detailed business summary (150-200 words):
+                Expand this analysis to better explain the query results (120-180 words):
                 
                 ${summary}
                 
-                Add more context about:
-                - What this means for the business
-                - Potential opportunities or risks
-                - Specific recommendations for action
-                - Broader implications for strategy
+                Make sure to:
+                - Clearly state what the user's query found
+                - Include specific numbers from the results
+                - Explain what this means in practical terms
+                - Help the user understand the answer to their question
                 
-                Keep it professional and actionable.`;
+                Focus on explaining the actual findings, not general advice.`;
                 
                 try {
                     await this.waitForRateLimit();
@@ -566,10 +824,10 @@ class AIService {
             return summary;
         } catch (error) {
             console.error('Result Summary Generation Error:', error);
-            return "Analysis completed successfully. The data reveals important patterns that can inform business decisions. Review the chart and table views for detailed findings and consider exploring related questions to gain deeper insights into your data.";
+            return "Analysis completed successfully. The results show the specific data that matches your query. Review the chart and table to see the detailed findings and understand what your question revealed about the dataset.";
         }
     }
 }
 
-// Export the AIService class
-export default AIService;
+// Make AIService available globally
+window.AIService = AIService;
